@@ -13,9 +13,6 @@ importers:
       '@adonisjs/core':
         specifier: ^5.9.0
         version: 5.9.0
-      '@adonisjs/cors':
-        specifier: ^2.2.1
-        version: 2.2.1(@adonisjs/core@5.9.0)
       '@adonisjs/lucid':
         specifier: ^18.4.0
         version: 18.4.2(@adonisjs/application@5.3.0)(@adonisjs/core@5.9.0)(pg@8.16.3)
@@ -163,12 +160,6 @@ packages:
 
   '@adonisjs/core@5.9.0':
     resolution: {integrity: sha512-32zG9EW0t0Ck0cMzlwD0+z3GJG7k/gZz6P0+h+s8N1N7fHxGixrKs7W7lT3OcIvk0NsuIw1tUPAU7fAWytHEqA==}
-
-  '@adonisjs/cors@2.2.1':
-    resolution: {integrity: sha512-qnrSG8ylpgTeZBOYEN3yXxY0PBUEg1KGDhgn9VKVFGxLKT+o9GGVOSZxUK3wG341B1zB9w5vuZN1z4M0Jitb6g==}
-    engines: {node: '>=18.16.0'}
-    peerDependencies:
-      '@adonisjs/core': ^6.2.0
 
   '@adonisjs/drive@2.3.0':
     resolution: {integrity: sha512-3V1kBe2qB/860KcS+dDonv8Xya2YDBdR7291pQgObJeTbV50Vy8RhwdOwtU7ybRfN2kh/svdC4238JGpbQOR9w==}
@@ -4825,10 +4816,6 @@ snapshots:
       stringify-attributes: 2.0.0
     transitivePeerDependencies:
       - supports-color
-
-  '@adonisjs/cors@2.2.1(@adonisjs/core@5.9.0)':
-    dependencies:
-      '@adonisjs/core': 5.9.0
 
   '@adonisjs/drive@2.3.0(@adonisjs/application@5.3.0)(@adonisjs/http-server@5.12.0(@adonisjs/application@5.3.0)(@adonisjs/encryption@4.0.8(@adonisjs/application@5.3.0)))':
     dependencies:
