@@ -3,7 +3,7 @@
 ## create .env file
 ```
 In backend folder is a .env.example. Copy this file and create .env. Use this command node ace generate:key to generate APP_KEY. You need to be in backend folder.
-
+```
 
 ## Use pnpm
 ```
