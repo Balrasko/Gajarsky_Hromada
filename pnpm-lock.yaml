@@ -10,6 +10,9 @@ importers:
 
   backend:
     dependencies:
+      '@adonisjs/auth':
+        specifier: ^9.5.0
+        version: 9.5.0(@adonisjs/assembler@5.9.6(@adonisjs/core@5.9.0))(@adonisjs/core@5.9.0)(@adonisjs/lucid@18.4.2(@adonisjs/application@5.3.0)(@adonisjs/core@5.9.0)(pg@8.16.3))
       '@adonisjs/core':
         specifier: ^5.9.0
         version: 5.9.0
@@ -148,6 +151,28 @@ packages:
     peerDependencies:
       '@adonisjs/core': ^5.1.0
 
+  '@adonisjs/auth@9.5.0':
+    resolution: {integrity: sha512-E8xGbDHLwmij8V+rshCZ0FWHA1QcE1KHLMcrxU/SWsBWc5ateM1ESQ+piEodjOSl1Om1XI2kxTzYvPiLt+K66g==}
+    engines: {node: '>=18.16.0'}
+    peerDependencies:
+      '@adonisjs/core': ^6.11.0
+      '@adonisjs/lucid': ^20.0.0 || ^21.0.1
+      '@adonisjs/session': ^7.4.1
+      '@japa/api-client': ^2.0.3 || ^3.0.0
+      '@japa/browser-client': ^2.0.3
+      '@japa/plugin-adonisjs': ^3.0.1 || ^4.0.0
+    peerDependenciesMeta:
+      '@adonisjs/lucid':
+        optional: true
+      '@adonisjs/session':
+        optional: true
+      '@japa/api-client':
+        optional: true
+      '@japa/browser-client':
+        optional: true
+      '@japa/plugin-adonisjs':
+        optional: true
+
   '@adonisjs/bodyparser@8.1.9':
     resolution: {integrity: sha512-enVETPmoBJhg+CP6AVlG/GSwllpW/5y22wjFpEhYZl0YOXnE7i+wsp2VeGfMtQzl4+snTuAPEfwCtG+I/s6jqQ==}
     peerDependencies:
@@ -205,6 +230,15 @@ packages:
     engines: {node: '>=14.15.4'}
     peerDependencies:
       '@adonisjs/core': ^5.1.0
+
+  '@adonisjs/presets@2.6.4':
+    resolution: {integrity: sha512-WvzWouziX88GMoGBLDobGRaSktWfz+fRqADJyhJd7+l0M2VMm5NF0LvAXbV8lMBLtBCicOxk973bJ9Kmyfy3qQ==}
+    peerDependencies:
+      '@adonisjs/assembler': ^7.8.2
+      '@adonisjs/core': ^6.13.0
+    peerDependenciesMeta:
+      '@adonisjs/assembler':
+        optional: true
 
   '@adonisjs/profiler@6.0.9':
     resolution: {integrity: sha512-V1bJPPDTn05NzAKUEICnYtWi9fC8NownUToaqxVkWOUovYBO6ubt06qtH1Uv9zvUjB2PKHUn+ieDAOgyHle09A==}
@@ -580,6 +614,10 @@ packages:
   '@jsdevtools/ono@7.1.3':
     resolution: {integrity: sha512-4JQNk+3mVzK3xh2rqd6RB4J46qUR19azEHBneZyTZM+c456qOrbbM/5xcR8huNCCcbVt7+UmizG6GuUvPvKUYg==}
 
+  '@lukeed/ms@2.0.2':
+    resolution: {integrity: sha512-9I2Zn6+NJLfaGoz9jN3lpwDgAYvfGeNYdbAIjJOqzs4Tpc+VU3Jqq4IofSUBKajiDS8k9fZIg18/z13mpk1bsA==}
+    engines: {node: '>=8'}
+
   '@mrmlnc/readdir-enhanced@2.2.1':
     resolution: {integrity: sha512-bPHp6Ji8b41szTOcaP63VlnbbO5Ny6dwAATtY6JTjh5N2OLrb5Qk/Th5cRkRQhkWCt+EJsYrNB0MiL+Gpn6e3g==}
     engines: {node: '>=4'}
@@ -713,6 +751,9 @@ packages:
   '@poppinss/colors@3.0.3':
     resolution: {integrity: sha512-jiZcp91PvIs5s4Wz4gEVY9J2tqH6H1++mZmsrC3TmFam9gbVPUJPEubPM5j4BQYJre7bjs9nkIbYFcWMOFHIVQ==}
 
+  '@poppinss/exception@1.2.2':
+    resolution: {integrity: sha512-m7bpKCD4QMlFCjA/nKTs23fuvoVFoA83brRKmObCUNmi/9tVu8Ve3w4YQAnJu4q3Tjf5fr685HYIC/IA2zHRSg==}
+
   '@poppinss/file-generator@1.0.2':
     resolution: {integrity: sha512-rRob//4jLbUVbDSsNRihloKGgpyVsWdFQWUmONxX/gyv4koT1OlVoc3ccWgk7Y/sEa2cFxj3zrFs+wdT09iXWw==}
 
@@ -736,14 +777,25 @@ packages:
   '@poppinss/multiparty@2.0.1':
     resolution: {integrity: sha512-Pf3V9PFyZDIkDBBiAOT2hdmA+1l/+hverHbUnMzNzwtwgO50s2ZPt5KxUydVA0hceg9gryo5unQ0WUF1SO9tkQ==}
 
+  '@poppinss/object-builder@1.1.0':
+    resolution: {integrity: sha512-FOrOq52l7u8goR5yncX14+k+Ewi5djnrt1JwXeS/FvnwAPOiveFhiczCDuvXdssAwamtrV2hp5Rw9v+n2T7hQg==}
+    engines: {node: '>=20.6.0'}
+
   '@poppinss/prompts@2.0.2':
     resolution: {integrity: sha512-jTrE8U5rnHTZNpBvPauFVDMQZZuEnfABbJUEXfq0uu8oGJnPaaA+y0bQbyqVf4yWqgRGldgrzAwNz739hIEnPQ==}
+
+  '@poppinss/string@1.7.0':
+    resolution: {integrity: sha512-IuCtWaUwmJeAdby0n1a5cTYsBLe7fPymdc4oNTTl1b6l+Ok+14XpSX0ILOEU6UtZ9D2XI3f4TVUh4Titkk1xgw==}
 
   '@poppinss/utils@4.0.4':
     resolution: {integrity: sha512-6LS3mofSVB9IQZqofA4rX6KVVcCpdwUQuNe4efHqOTzgD/Q5HTVvDP0vKg1m994QlzJs4aLW1JwXVcNCThEh4g==}
 
   '@poppinss/utils@5.0.0':
     resolution: {integrity: sha512-SpJL5p4Nx3bRCpCf62KagZLUHLvJD+VDylGpXAeP2G5qb3s6SSOBlpaFmer4GxdyTqLIUt0PRCzF1TbpNU+qZw==}
+
+  '@poppinss/utils@6.10.1':
+    resolution: {integrity: sha512-da+MMyeXhBaKtxQiWPfy7+056wk3lVIhioJnXHXkJ2/OHDaZfFcyKHNl1R06sdYO8lIRXcXdoZ6LO2ARmkAREA==}
+    engines: {node: '>=18.16.0'}
 
   '@quasar/app-vite@2.4.0':
     resolution: {integrity: sha512-nfdcfERQ1bdUFsgXfYexgUAGBrsRHuzlik5p58cKGpYXiwUZZN6mJhN8VxU/zGT0GYHHiNIZlb67N+R52NYd6Q==}
@@ -1004,6 +1056,9 @@ packages:
 
   '@types/pino@6.3.12':
     resolution: {integrity: sha512-dsLRTq8/4UtVSpJgl9aeqHvbh6pzdmjYD3C092SYgLD2TyoCqHpTJk6vp8DvCTGGc7iowZ2MoiYiVUUCcu7muw==}
+
+  '@types/pluralize@0.0.33':
+    resolution: {integrity: sha512-JOqsl+ZoCpP4e8TDke9W79FDcSgPAR0l6pixx2JHkhnRjvShyYiAYw2LVsnA7K08Y6DeOnaU6ujmENO4os/cYg==}
 
   '@types/proxy-addr@2.0.3':
     resolution: {integrity: sha512-TgAHHO4tNG3HgLTUhB+hM4iwW6JUNeQHCLnF1DjaDA9c69PN+IasoFu2MYDhubFc+ZIw5c5t9DMtjvrD6R3Egg==}
@@ -1430,6 +1485,10 @@ packages:
     resolution: {integrity: sha512-wrH5NNqren/QMtKUEEJf7z86YjfqW/2uw3IL3/xpqZUC95SSVIFXYQeeGjL6FT/X68IROu6RMehZQS5foy2BXw==}
     hasBin: true
 
+  basic-auth@2.0.1:
+    resolution: {integrity: sha512-NF+epuEdnUYVlGuhaxbbq+dvJttwLnGY+YixlXlME5KpQ5W3CnXA5cVTneY3SPbPDRkcjMbifrwmFYcClgOZeg==}
+    engines: {node: '>= 0.8'}
+
   binary-extensions@2.3.0:
     resolution: {integrity: sha512-Ceh+7ox5qe7LJuLHoY0feh3pHuUDHAcRUeyL2VYghZwfpkNIy/+8Ocg0a3UuSoYzavmylwuLWQOf3hl0jjMMIw==}
     engines: {node: '>=8'}
@@ -1529,6 +1588,10 @@ packages:
   cardinal@2.1.1:
     resolution: {integrity: sha512-JSr5eOgoEymtYHBjNWyjrMqet9Am2miJhlfKNdqLp6zoeAh0KN5dRAcxlecj5mAJrmQomgiOBj35xHLrFjqBpw==}
     hasBin: true
+
+  case-anything@3.1.2:
+    resolution: {integrity: sha512-wljhAjDDIv/hM2FzgJnYQg90AWmZMNtESCjTeLH680qTzdo0nErlCxOmgzgX4ZsZAtIvqHyD87ES8QyriXB+BQ==}
+    engines: {node: '>=18'}
 
   chai@4.5.0:
     resolution: {integrity: sha512-RITGBfijLkBddZvnn8jdqoTypxvqbOLYQkGGxXzeFjVHvudaPw0HNFD9x928/eUwYWd2dPCugVqspGALTZZQKw==}
@@ -3853,6 +3916,10 @@ packages:
   safe-regex@1.1.0:
     resolution: {integrity: sha512-aJXcif4xnaNUzvUuC5gcb46oTS7zvg4jpMTnuqtrEPlR3vFr4pxtdTwaF1Qs3Enjn9HK+ZlwQui+a7z0SywIzg==}
 
+  safe-stable-stringify@2.5.0:
+    resolution: {integrity: sha512-b3rppTKm9T+PsVCBEOUR46GWI7fdOs00VKZ1+9c1EWDaDMvjQc6tUwuFyIprgGgTcWoVHSKrU8H31ZHA2e0RHA==}
+    engines: {node: '>=10'}
+
   safer-buffer@2.1.2:
     resolution: {integrity: sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==}
 
@@ -4777,6 +4844,17 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@adonisjs/auth@9.5.0(@adonisjs/assembler@5.9.6(@adonisjs/core@5.9.0))(@adonisjs/core@5.9.0)(@adonisjs/lucid@18.4.2(@adonisjs/application@5.3.0)(@adonisjs/core@5.9.0)(pg@8.16.3))':
+    dependencies:
+      '@adonisjs/core': 5.9.0
+      '@adonisjs/presets': 2.6.4(@adonisjs/assembler@5.9.6(@adonisjs/core@5.9.0))(@adonisjs/core@5.9.0)
+      '@poppinss/utils': 6.10.1
+      basic-auth: 2.0.1
+    optionalDependencies:
+      '@adonisjs/lucid': 18.4.2(@adonisjs/application@5.3.0)(@adonisjs/core@5.9.0)(pg@8.16.3)
+    transitivePeerDependencies:
+      - '@adonisjs/assembler'
+
   '@adonisjs/bodyparser@8.1.9(@adonisjs/application@5.3.0)(@adonisjs/drive@2.3.0(@adonisjs/application@5.3.0)(@adonisjs/http-server@5.12.0(@adonisjs/application@5.3.0)(@adonisjs/encryption@4.0.8(@adonisjs/application@5.3.0))))(@adonisjs/http-server@5.12.0(@adonisjs/application@5.3.0)(@adonisjs/encryption@4.0.8(@adonisjs/application@5.3.0)))':
     dependencies:
       '@adonisjs/application': 5.3.0
@@ -4916,6 +4994,13 @@ snapshots:
       - sqlite3
       - supports-color
       - tedious
+
+  '@adonisjs/presets@2.6.4(@adonisjs/assembler@5.9.6(@adonisjs/core@5.9.0))(@adonisjs/core@5.9.0)':
+    dependencies:
+      '@adonisjs/core': 5.9.0
+      '@poppinss/utils': 6.10.1
+    optionalDependencies:
+      '@adonisjs/assembler': 5.9.6(@adonisjs/core@5.9.0)
 
   '@adonisjs/profiler@6.0.9(@adonisjs/logger@4.1.6)':
     dependencies:
@@ -5288,6 +5373,8 @@ snapshots:
 
   '@jsdevtools/ono@7.1.3': {}
 
+  '@lukeed/ms@2.0.2': {}
+
   '@mrmlnc/readdir-enhanced@2.2.1':
     dependencies:
       call-me-maybe: 1.0.2
@@ -5416,6 +5503,8 @@ snapshots:
       color-support: 1.1.3
       kleur: 4.1.5
 
+  '@poppinss/exception@1.2.2': {}
+
   '@poppinss/file-generator@1.0.2':
     dependencies:
       bytes: 3.1.2
@@ -5438,10 +5527,23 @@ snapshots:
       safe-buffer: 5.2.1
       uid-safe: 2.1.5
 
+  '@poppinss/object-builder@1.1.0': {}
+
   '@poppinss/prompts@2.0.2':
     dependencies:
       '@poppinss/colors': 3.0.3
       enquirer: 2.4.1
+
+  '@poppinss/string@1.7.0':
+    dependencies:
+      '@lukeed/ms': 2.0.2
+      '@types/bytes': 3.1.5
+      '@types/pluralize': 0.0.33
+      bytes: 3.1.2
+      case-anything: 3.1.2
+      pluralize: 8.0.0
+      slugify: 1.6.6
+      truncatise: 0.0.8
 
   '@poppinss/utils@4.0.4':
     dependencies:
@@ -5482,6 +5584,15 @@ snapshots:
       resolve-from: 5.0.0
       slugify: 1.6.6
       truncatise: 0.0.8
+
+  '@poppinss/utils@6.10.1':
+    dependencies:
+      '@poppinss/exception': 1.2.2
+      '@poppinss/object-builder': 1.1.0
+      '@poppinss/string': 1.7.0
+      flattie: 1.1.1
+      safe-stable-stringify: 2.5.0
+      secure-json-parse: 4.0.0
 
   '@quasar/app-vite@2.4.0(@types/node@20.19.17)(eslint@9.36.0)(quasar@2.18.5)(rollup@4.52.2)(sass@1.93.1)(terser@5.44.0)(typescript@5.9.2)(vue-router@4.5.1(vue@3.5.20(typescript@5.9.2)))(vue@3.5.20(typescript@5.9.2))(yaml@2.8.1)':
     dependencies:
@@ -5741,6 +5852,8 @@ snapshots:
       '@types/pino-pretty': 5.0.0
       '@types/pino-std-serializers': 4.0.0
       sonic-boom: 2.8.0
+
+  '@types/pluralize@0.0.33': {}
 
   '@types/proxy-addr@2.0.3':
     dependencies:
@@ -6249,6 +6362,10 @@ snapshots:
 
   baseline-browser-mapping@2.8.6: {}
 
+  basic-auth@2.0.1:
+    dependencies:
+      safe-buffer: 5.1.2
+
   binary-extensions@2.3.0: {}
 
   bl@4.1.0:
@@ -6388,6 +6505,8 @@ snapshots:
     dependencies:
       ansicolors: 0.3.2
       redeyed: 2.1.1
+
+  case-anything@3.1.2: {}
 
   chai@4.5.0:
     dependencies:
@@ -8850,6 +8969,8 @@ snapshots:
   safe-regex@1.1.0:
     dependencies:
       ret: 0.1.15
+
+  safe-stable-stringify@2.5.0: {}
 
   safer-buffer@2.1.2: {}
 
