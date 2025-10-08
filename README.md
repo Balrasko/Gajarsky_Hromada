@@ -15,6 +15,11 @@ npm install -g pnpm
 docker run --name postgresql-container -e POSTGRES_PASSWORD=postgresadm -d -p 5432:5432 postgres
 ```
 
+## Migrate DB
+```
+pnpm --filter backend exec node ace migration:run   
+```
+
 ## Install dependencies
 ```
 pnpm install 
