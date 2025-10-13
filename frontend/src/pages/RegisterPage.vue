@@ -9,8 +9,13 @@
       <q-separator inset />
 
       <q-card-section>
-        <q-form class="column q-gutter-md" @submit.prevent="onSubmit">
-          <div class="row q-col-gutter-md">
+        <q-form
+          :key="formResetKey"
+          ref="registerFormRef"
+          class="column q-gutter-md"
+          @submit.prevent="onSubmit"
+        >
+          <div class="row justify-between no-wrap">
             <div class="col-12 col-sm-6">
               <q-input
                 v-model="form.firstName"
@@ -96,10 +101,13 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import type { QForm } from 'quasar';
 
 import { registerUser } from 'src/services/api';
 
 const router = useRouter();
+const registerFormRef = ref<QForm | null>(null);
+const formResetKey = ref(0);
 
 const form = reactive({
   firstName: '',
@@ -119,11 +127,13 @@ const emailRule = (val: string) => /.+@.+\..+/.test(val) || 'Enter a valid email
 const passwordRule = (val: string) => val.length >= 6 || 'At least 6 characters';
 
 const resetForm = () => {
+  registerFormRef.value?.resetValidation();
   form.firstName = '';
   form.lastName = '';
   form.nickName = '';
   form.email = '';
   form.password = '';
+  formResetKey.value += 1;
 };
 
 const onSubmit = async () => {

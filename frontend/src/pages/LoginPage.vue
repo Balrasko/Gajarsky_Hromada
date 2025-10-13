@@ -9,7 +9,12 @@
       <q-separator inset />
 
       <q-card-section>
-        <q-form class="column q-gutter-md" @submit.prevent="onSubmit">
+        <q-form
+          :key="formResetKey"
+          ref="loginFormRef"
+          class="column q-gutter-md"
+          @submit.prevent="onSubmit"
+        >
           <q-input
             v-model="form.email"
             type="email"
@@ -64,10 +69,13 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import type { QForm } from 'quasar';
 
 import { loginUser } from 'src/services/api';
 
 const router = useRouter();
+const loginFormRef = ref<QForm | null>(null);
+const formResetKey = ref(0);
 
 const form = reactive({
   email: '',
@@ -90,7 +98,9 @@ const onSubmit = async () => {
   try {
     const user = await loginUser({ ...form });
     welcomeMessage.value = `Welcome back, ${user.nickName}!`;
+    loginFormRef.value?.resetValidation();
     form.password = '';
+    formResetKey.value += 1;
   } catch (error) {
     errorMessage.value = 'Invalid email or password. Please try again.';
     console.error('Login failed', error);
