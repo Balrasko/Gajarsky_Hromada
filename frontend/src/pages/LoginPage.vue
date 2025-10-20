@@ -70,10 +70,12 @@
 import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type { QForm } from 'quasar';
+import { useQuasar } from 'quasar';
 
 import { loginUser } from 'src/services/api';
 
 const router = useRouter();
+const $q = useQuasar();
 const loginFormRef = ref<QForm | null>(null);
 const formResetKey = ref(0);
 
@@ -98,9 +100,18 @@ const onSubmit = async () => {
   try {
     const user = await loginUser({ ...form });
     welcomeMessage.value = `Welcome back, ${user.nickName}!`;
+    $q.notify({
+      type: 'positive',
+      message: `Prihlásenie úspešné (mock). Presmerovávam do pracovného priestoru.`,
+    });
     loginFormRef.value?.resetValidation();
     form.password = '';
     formResetKey.value += 1;
+    setTimeout(() => {
+      router.push({ name: 'home' }).catch(() => {
+        /* noop */
+      });
+    }, 400);
   } catch (error) {
     errorMessage.value = 'Invalid email or password. Please try again.';
     console.error('Login failed', error);

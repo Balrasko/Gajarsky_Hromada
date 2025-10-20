@@ -102,10 +102,12 @@
 import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type { QForm } from 'quasar';
+import { useQuasar } from 'quasar';
 
 import { registerUser } from 'src/services/api';
 
 const router = useRouter();
+const $q = useQuasar();
 const registerFormRef = ref<QForm | null>(null);
 const formResetKey = ref(0);
 
@@ -142,11 +144,17 @@ const onSubmit = async () => {
   successMessage.value = '';
 
   try {
-    await registerUser({ ...form });
-    successMessage.value = 'Registration successful! You can now log in.';
+    const user = await registerUser({ ...form });
+    successMessage.value = `Registration successful for @${user.nickName}! You can now log in.`;
+    $q.notify({
+      type: 'positive',
+      message: `Účet @${user.nickName} bol vytvorený (mock data).`,
+    });
     resetForm();
   } catch (error) {
-    errorMessage.value = 'Could not register. Please review the form and try again.';
+    const message =
+      error instanceof Error ? error.message : 'Could not register. Please review the form.';
+    errorMessage.value = message;
     console.error('Registration failed', error);
   } finally {
     isSubmitting.value = false;
