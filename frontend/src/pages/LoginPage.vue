@@ -69,11 +69,14 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import type { QForm } from 'quasar';
+import { useQuasar, type QForm } from 'quasar';
 
 import { loginUser } from 'src/services/api';
+import { useSession } from 'src/services/session';
 
 const router = useRouter();
+const $q = useQuasar();
+const { setUser } = useSession();
 const loginFormRef = ref<QForm | null>(null);
 const formResetKey = ref(0);
 
@@ -97,10 +100,13 @@ const onSubmit = async () => {
 
   try {
     const user = await loginUser({ ...form });
+    setUser(user);
     welcomeMessage.value = `Welcome back, ${user.nickName}!`;
     loginFormRef.value?.resetValidation();
     form.password = '';
     formResetKey.value += 1;
+    $q.notify({ type: 'positive', message: `Signed in as ${user.nickName}` });
+    void router.push({ name: 'home' });
   } catch (error) {
     errorMessage.value = 'Invalid email or password. Please try again.';
     console.error('Login failed', error);
