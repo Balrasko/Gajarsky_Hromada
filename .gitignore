@@ -63,6 +63,8 @@ Temporary Items
 /.idea/
 .corepack/
 /.corepack/
+/.quasar/
+.quasar/
 
 # Node modules and dependency files
 /node_modules/
