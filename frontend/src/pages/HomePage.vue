@@ -97,8 +97,11 @@
             />
           </div>
 
-          <q-scroll-area class="channels-scroll q-mt-sm">
-            <q-list dense>
+          <div
+            class="channels-scroll q-mt-sm"
+            :class="{ 'channels-scroll--empty': sortedActiveChannels.length === 0 }"
+          >
+            <q-list v-if="sortedActiveChannels.length" dense>
               <q-item
                 v-for="channel in sortedActiveChannels"
                 :key="channel.id"
@@ -112,25 +115,25 @@
                   </q-avatar>
                 </q-item-section>
 
-                <q-item-section>
-                  <q-item-label class="text-body2 text-weight-medium">
-                    #{{ channel.name }}
+                <q-item-section class="channel-item__main">
+                  <q-item-label class="text-body2 text-weight-medium channel-item__title">
+                    <span class="channel-item__name">#{{ channel.name }}</span>
                     <q-badge
                       v-if="channel.hasInvite && !channel.isMember"
                       color="orange-7"
                       text-color="white"
                       label="Invite"
-                      class="q-ml-sm"
+                      class="channel-item__badge"
                     />
                     <q-badge
                       v-if="channel.ownerId === currentUser.id"
                       color="purple-7"
                       text-color="white"
                       label="Admin"
-                      class="q-ml-sm"
+                      class="channel-item__badge"
                     />
                   </q-item-label>
-                  <q-item-label caption class="ellipsis">
+                  <q-item-label caption class="channel-item__description">
                     {{ channel.description }}
                   </q-item-label>
                 </q-item-section>
@@ -200,13 +203,13 @@
             </q-list>
 
             <div
-              v-if="sortedActiveChannels.length === 0"
+              v-else
               class="empty-placeholder column items-center text-caption text-grey-6 q-py-xl"
             >
               <q-icon name="chat_bubble_outline" size="32px" class="q-mb-sm" />
               Žiadne kanály. Vytvorte nový cez tlačidlo alebo príkaz /join.
             </div>
-          </q-scroll-area>
+          </div>
         </section>
 
         <section class="card dormant-card" v-if="dormantChannels.length">
@@ -1201,6 +1204,7 @@ const reclaimChannel = (channelName: string) => {
     },
   ];
 
+  channels.value = [...channels.value];
   selectedChannelId.value = dormantChannel.id;
 
   $q.notify({
@@ -1857,14 +1861,61 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
+.channels-card .q-item {
+  align-items: flex-start;
+}
+
 .channels-scroll {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+}
+
+.channels-scroll--empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  overflow-y: hidden;
 }
 
 .channel-item {
   border-radius: 12px;
   transition: background 0.2s ease;
+}
+
+.channel-item__main {
+  min-width: 0;
+}
+
+.channel-item__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.channel-item__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-item__badge {
+  flex: 0 0 auto;
+  margin-left: 0;
+}
+
+.channel-item__description {
+  margin-top: 2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
 }
 
 .channel-item--active {
