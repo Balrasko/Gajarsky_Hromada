@@ -1,5 +1,11 @@
 # Setup
 
+## Node
+```
+Use node version 24 
+With nvm u can use *nvm install 24*
+```
+
 ## Use pnpm
 
 ```
