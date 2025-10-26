@@ -1,9 +1,10 @@
 # Setup
 
 ## Node
+
 ```
-Use node version 24 
-With nvm u can use *nvm install 24*
+Use node version 24
+With nvm u can use **nvm install 24**
 ```
 
 ## Use pnpm
@@ -21,7 +22,7 @@ pnpm install
 ## create .env file
 
 ```
-In backend folder is a .env.example. Copy this file and create .env file. Use this command *node ace generate:key* to generate APP_KEY. You need to be in backend folder.
+In backend folder is a .env.example. Copy this file and create .env file. Use this command **node ace generate:key** to generate APP_KEY. You need to be in backend folder.
 ```
 
 ## Start DB server
