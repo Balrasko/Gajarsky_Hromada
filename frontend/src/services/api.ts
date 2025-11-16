@@ -1,5 +1,13 @@
-import { uid } from 'quasar';
-import type { UserDto } from '@vpwa/shared';
+import axios from 'axios';
+
+import type {
+  ChannelDto,
+  ChannelMemberDto,
+  CommandResultDto,
+  MessageDto,
+  TypingStateDto,
+  UserDto,
+} from '@vpwa/shared';
 
 export interface RegisterPayload {
   firstName: string;
@@ -14,108 +22,114 @@ export interface LoginPayload {
   password: string;
 }
 
-interface MockAccount extends UserDto {
-  password: string;
-}
+const api = axios.create({
+  baseURL: '/api',
+  timeout: 10_000,
+});
 
-const delay = (ms = 400) => new Promise((resolve) => setTimeout(resolve, ms));
+const unwrap = <T>(value: T) => value;
 
-const seedUsers: MockAccount[] = [
-  {
-    id: 'mock-ada',
-    firstName: 'Ada',
-    lastName: 'Horváth',
-    nickName: 'ada',
-    email: 'ada@example.com',
-    status: 'online',
-    password: 'password',
-  },
-  {
-    id: 'mock-ema',
-    firstName: 'Ema',
-    lastName: 'Nováková',
-    nickName: 'ema',
-    email: 'ema@example.com',
-    status: 'dnd',
-    password: 'password',
-  },
-  {
-    id: 'mock-gab',
-    firstName: 'Gabriel',
-    lastName: 'Kováč',
-    nickName: 'gabo',
-    email: 'gabo@example.com',
-    status: 'offline',
-    password: 'password',
-  },
-];
-
-const mockDatabase: MockAccount[] = [...seedUsers];
-
-export const registerUser = async (payload: RegisterPayload) => {
-  await delay();
-
-  const nickTaken = mockDatabase.some(
-    (account) => account.nickName.toLowerCase() === payload.nickName.toLowerCase(),
-  );
-  if (nickTaken) {
-    throw new Error('NickName already used');
-  }
-
-  const emailTaken = mockDatabase.some(
-    (account) => account.email.toLowerCase() === payload.email.toLowerCase(),
-  );
-  if (emailTaken) {
-    throw new Error('Email already used');
-  }
-
-  const newAccount: MockAccount = {
-    id: uid(),
-    firstName: payload.firstName,
-    lastName: payload.lastName,
-    nickName: payload.nickName,
-    email: payload.email,
-    status: 'online',
-    password: payload.password,
-  };
-
-  mockDatabase.push(newAccount);
-  return {
-    id: newAccount.id,
-    firstName: newAccount.firstName,
-    lastName: newAccount.lastName,
-    nickName: newAccount.nickName,
-    email: newAccount.email,
-    status: newAccount.status,
-  };
+export const registerUser = async (payload: RegisterPayload): Promise<UserDto> => {
+  const { data } = await api.post<{ user: UserDto }>('/auth/register', payload);
+  return unwrap(data.user);
 };
 
-export const loginUser = async (payload: LoginPayload) => {
-  await delay();
-
-  const account = mockDatabase.find(
-    (item) => item.email.toLowerCase() === payload.email.toLowerCase(),
-  );
-
-  if (!account || account.password !== payload.password) {
-    throw new Error('Invalid credentials');
-  }
-
-  return {
-    id: account.id,
-    firstName: account.firstName,
-    lastName: account.lastName,
-    nickName: account.nickName,
-    email: account.email,
-    status: account.status,
-  };
+export const loginUser = async (payload: LoginPayload): Promise<UserDto> => {
+  const { data } = await api.post<{ user: UserDto }>('/auth/login', payload);
+  return unwrap(data.user);
 };
 
-export const fetchUsers = async () => {
-  await delay(300);
-  return mockDatabase.map<UserDto>((account) => {
-    const { password: ignoredPassword, ...publicProfile } = account;
-    void ignoredPassword;
-    return publicProfile;
+export const fetchUsers = async (): Promise<UserDto[]> => {
+  const { data } = await api.get<{ users: UserDto[] }>('/users');
+  return unwrap(data.users);
+};
+
+export const fetchChannels = async (userId: string): Promise<ChannelDto[]> => {
+  const { data } = await api.get<{ channels: ChannelDto[] }>('/channels', {
+    params: { userId },
   });
+  return unwrap(data.channels);
+};
+
+export const fetchChannelMembers = async (
+  channelId: string,
+  userId: string,
+): Promise<{ members: ChannelMemberDto[]; feedback?: string }> => {
+  const { data } = await api.get<{ members: ChannelMemberDto[]; feedback?: string }>(
+    `/channels/${channelId}/members`,
+    {
+      params: { userId },
+    },
+  );
+  return data;
+};
+
+export const leaveChannelRequest = async (
+  channelId: string,
+  userId: string,
+): Promise<{ feedback?: string }> => {
+  const { data } = await api.post<{ feedback?: string }>(`/channels/${channelId}/leave`, {
+    userId,
+  });
+  return data;
+};
+
+export const fetchChannelMessages = async (
+  channelId: string,
+  userId: string,
+  cursor?: string,
+  limit = 30,
+): Promise<{ messages: MessageDto[]; nextCursor: string | null }> => {
+  const { data } = await api.get<{ messages: MessageDto[]; nextCursor: string | null }>(
+    `/channels/${channelId}/messages`,
+    {
+      params: { userId, cursor, limit },
+    },
+  );
+
+  return data;
+};
+
+export const sendChannelMessage = async (
+  channelId: string,
+  userId: string,
+  content: string,
+): Promise<MessageDto> => {
+  const { data } = await api.post<{ message: MessageDto }>(`/channels/${channelId}/messages`, {
+    userId,
+    content,
+  });
+  return data.message;
+};
+
+export const executeCommand = async (
+  userId: string,
+  command: string,
+  channelId?: string,
+): Promise<CommandResultDto> => {
+  const { data } = await api.post<{ result: CommandResultDto }>('/commands', {
+    userId,
+    command,
+    channelId,
+  });
+
+  return data.result;
+};
+
+export const updateTypingState = async (
+  channelId: string,
+  userId: string,
+  content: string,
+) => {
+  await api.post(`/channels/${channelId}/typing`, { userId, content });
+};
+
+export const fetchTypingStates = async (
+  channelId: string,
+  userId: string,
+): Promise<TypingStateDto[]> => {
+  const { data } = await api.get<{ typing: TypingStateDto[] }>(`/channels/${channelId}/typing`, {
+    params: { userId },
+  });
+  return data.typing;
 };

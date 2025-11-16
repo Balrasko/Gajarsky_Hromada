@@ -146,6 +146,7 @@ const onSubmit = async () => {
   try {
     const user = await registerUser({ ...form });
     successMessage.value = `Registration successful for @${user.nickName}! You can now log in.`;
+    errorMessage.value = '';
     $q.notify({
       type: 'positive',
       message: `Účet @${user.nickName} bol vytvorený (mock data).`,

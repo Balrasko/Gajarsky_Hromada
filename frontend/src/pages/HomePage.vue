@@ -267,13 +267,6 @@
               text-color="white"
               label="Pending invite"
             />
-            <q-btn
-              v-if="selectedChannel"
-              outline
-              color="secondary"
-              label="Simulovať novú správu"
-              icon="auto_mode"
-              @click="simulateIncomingMessage(selectedChannel)"
             />
           </div>
         </header>
@@ -597,6 +590,8 @@ import { uid, useQuasar } from 'quasar';
 import type { UserDto } from '@vpwa/shared';
 import { useRouter } from 'vue-router';
 
+import { clearCurrentUser, loadCurrentUser } from 'src/services/session';
+
 type ChannelType = 'public' | 'private';
 type MemberRole = 'owner' | 'admin' | 'member';
 type AppVisibilityState = 'visible' | 'hidden';
@@ -650,13 +645,23 @@ interface CommandDefinition {
 const $q = useQuasar();
 const router = useRouter();
 
-const currentUser = reactive<UserDto>({
+const defaultUser: UserDto = {
   id: 'u-you',
   firstName: 'Ema',
   lastName: 'Nováková',
   nickName: 'ema',
   email: 'ema@example.com',
   status: 'online',
+};
+
+const storedUser = loadCurrentUser();
+if (!storedUser) {
+  void router.replace({ name: 'login' });
+}
+
+const currentUser = reactive<UserDto>({
+  ...defaultUser,
+  ...(storedUser ?? {}),
 });
 
 const notificationSettings = reactive({
@@ -1587,50 +1592,6 @@ const performKick = (channel: ChannelPrototype, nickName: string, isAdminKick: b
   }
 };
 
-const simulateIncomingMessage = (channel: ChannelPrototype) => {
-  const candidates = channel.members.filter((member) => member.nickName !== currentUser.nickName);
-  if (candidates.length === 0) {
-    return;
-  }
-
-  const author = candidates[Math.floor(Math.random() * candidates.length)]!;
-  const addressed = Math.random() > 0.6 ? currentUser.nickName : undefined;
-  const contentPool = [
-    'Práve som dokončil úlohu, prosím review.',
-    '@ema môžeš sa pozrieť na posledný ticket?',
-    'Aktualizoval som dokumentáciu.',
-    'Prichádza nová správa do tohoto kanála!',
-  ];
-  const content = contentPool[Math.floor(Math.random() * contentPool.length)];
-
-  if (!content) {
-    return;
-  }
-
-  const message: Message = {
-    id: uid(),
-    sender: author.nickName,
-    content,
-    createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    addressedTo: addressed,
-  };
-
-  if (currentUser.status === 'offline') {
-    const queue = offlineQueue[channel.id] ?? (offlineQueue[channel.id] = []);
-    queue.push(message);
-    return;
-  }
-
-  channel.messages.push(message);
-  channel.lastActiveDays = 0;
-
-  if (selectedChannelId.value !== channel.id) {
-    channel.unread += 1;
-  }
-
-  maybeNotify(channel, message);
-};
-
 const maybeNotify = (channel: ChannelPrototype, message: Message) => {
   if (message.sender === currentUser.nickName) {
     return;
@@ -1739,9 +1700,12 @@ const confirmChannelCreation = () => {
 };
 
 const logout = () => {
+  clearCurrentUser();
+  Object.assign(currentUser, defaultUser);
+
   $q.notify({
     type: 'info',
-    message: 'Odhlásenie prebehlo (placeholder).',
+    message: 'Boli ste odhlásený.',
   });
 
   router.push({ name: 'login' }).catch(() => {

@@ -1,8 +1,10 @@
 import { randomUUID } from 'crypto'
 
 import { DateTime } from 'luxon'
-import { BaseModel, beforeCreate, column } from '@ioc:Adonis/Lucid/Orm'
+import { BaseModel, beforeCreate, column, hasOne, HasOne } from '@ioc:Adonis/Lucid/Orm'
 import type { UserDto } from '@vpwa/shared'
+
+import UserPreference from './UserPreference'
 
 export default class User extends BaseModel {
   @column({ isPrimary: true })
@@ -31,6 +33,9 @@ export default class User extends BaseModel {
 
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   public updatedAt: DateTime
+
+  @hasOne(() => UserPreference)
+  public preference: HasOne<typeof UserPreference>
 
   public toDto(): UserDto {
     return {

@@ -73,6 +73,7 @@ import type { QForm } from 'quasar';
 import { useQuasar } from 'quasar';
 
 import { loginUser } from 'src/services/api';
+import { saveCurrentUser } from 'src/services/session';
 
 const router = useRouter();
 const $q = useQuasar();
@@ -99,6 +100,8 @@ const onSubmit = async () => {
 
   try {
     const user = await loginUser({ ...form });
+    saveCurrentUser(user);
+    errorMessage.value = '';
     welcomeMessage.value = `Welcome back, ${user.nickName}!`;
     $q.notify({
       type: 'positive',
