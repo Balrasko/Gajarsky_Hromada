@@ -4,7 +4,7 @@
       <q-toolbar>
         <q-toolbar-title>Workspace</q-toolbar-title>
         <q-space />
-        <q-btn flat dense color="white" label="Home" to="/" />
+        <q-btn flat dense color="white" label="Home" to="/home" />
         <q-btn flat dense color="white" label="Register" to="/register" />
         <q-btn flat dense color="white" label="Login" to="/login" />
       </q-toolbar>

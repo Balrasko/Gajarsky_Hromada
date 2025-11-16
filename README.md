@@ -1,38 +1,58 @@
 # Setup
 
-## create .env file
+## Node
+
+Use node version 24
+With nvm u can use:
+
 ```
-In backend folder is a .env.example. Copy this file and create .env. Use this command node ace generate:key to generate APP_KEY. You need to be in backend folder.
+nvm install 24
 ```
 
 ## Use pnpm
+
 ```
 npm install -g pnpm
 ```
 
-## Start DB server
+## Install dependencies
+
+```
+pnpm install
+```
+
+## create .env file
+
+In backend folder is a .env.example. Copy this file and rename it *.env* file.
+U will need APP_KEY.
+Use this command to generate APP_KEY. You need to be in backend folder. Paste this key to .env file.
+
+```
+node ace generate:key
+```
+
+## Start DB server (Not required in Phase 1)
+
 ```
 docker run --name postgresql-container -e POSTGRES_PASSWORD=postgresadm -d -p 5432:5432 postgres
 ```
 
-## Migrate DB
-```
-pnpm --filter backend exec node ace migration:run   
-```
+## Migrate DB (Not required in Phase 1)
 
-## Install dependencies
 ```
-pnpm install 
+pnpm --filter backend exec node ace migration:run
 ```
-
 
 # Running the project
-## Start backend
+
+## Start backend (Not required in Phase 1)
+
 ```
 pnpm --filter backend dev
 ```
 
 ## Start frontend
+
 ```
 pnpm --filter frontend dev
 ```
