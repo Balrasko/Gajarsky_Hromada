@@ -267,7 +267,6 @@
               text-color="white"
               label="Pending invite"
             />
-            />
           </div>
         </header>
 
@@ -330,7 +329,7 @@
                     <span class="text-weight-medium">
                       {{ message.system ? 'Systém' : message.sender }}
                     </span>
-                    <span class="text-caption text-grey-6">{{ message.createdAt }}</span>
+                    <span class="text-caption text-grey-6">{{ formatMessageTime(message.createdAt) }}</span>
                     <q-chip
                       v-if="message.addressedTo === currentUser.nickName"
                       color="primary"
@@ -586,42 +585,37 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { uid, useQuasar } from 'quasar';
-import type { UserDto } from '@vpwa/shared';
+import { useQuasar } from 'quasar';
+import type { ChannelDto, ChannelMemberDto, MessageDto, TypingStateDto, UserDto } from '@vpwa/shared';
 import { useRouter } from 'vue-router';
 
+import {
+  executeCommand,
+  fetchChannelMembers,
+  fetchChannelMessages,
+  fetchChannels,
+  fetchTypingStates,
+  leaveChannelRequest,
+  sendChannelMessage,
+  updateTypingState,
+} from 'src/services/api';
 import { clearCurrentUser, loadCurrentUser } from 'src/services/session';
 
 type ChannelType = 'public' | 'private';
-type MemberRole = 'owner' | 'admin' | 'member';
 type AppVisibilityState = 'visible' | 'hidden';
 
-interface Message {
-  id: string;
-  sender: string;
-  content: string;
-  createdAt: string;
-  addressedTo?: string | undefined;
-  system?: boolean;
-}
-
-interface ChannelMember extends UserDto {
-  role: MemberRole;
-  draftSamples: string[];
-}
-
-interface DraftPreview {
+type DraftPreview = {
   id: string;
   nickName: string;
   body: string;
-}
+};
 
-interface ChannelPrototype {
-  id: string;
-  name: string;
-  type: ChannelType;
-  description: string;
-  ownerId: string;
+type ChatMessage = MessageDto & {
+  system?: boolean;
+};
+
+type ChannelState = ChannelDto & {
+  description?: string;
   isMember: boolean;
   hasInvite: boolean;
   pinned: boolean;
@@ -629,12 +623,16 @@ interface ChannelPrototype {
   lastActiveDays: number;
   unread: number;
   typingMembers: string[];
-  members: ChannelMember[];
+  typingPreviews: TypingStateDto[];
   pendingInvites: string[];
   bannedMembers: string[];
   pendingKickVotes: Record<string, number>;
-  messages: Message[];
-}
+  members: ChannelMemberDto[];
+  messages: ChatMessage[];
+  nextCursor: string | null;
+  messagesLoaded: boolean;
+  loadingMessages: boolean;
+};
 
 interface CommandDefinition {
   command: string;
@@ -645,12 +643,12 @@ interface CommandDefinition {
 const $q = useQuasar();
 const router = useRouter();
 
-const defaultUser: UserDto = {
-  id: 'u-you',
-  firstName: 'Ema',
-  lastName: 'Nováková',
-  nickName: 'ema',
-  email: 'ema@example.com',
+const emptyUser: UserDto = {
+  id: '',
+  firstName: '',
+  lastName: '',
+  nickName: '',
+  email: '',
   status: 'online',
 };
 
@@ -660,7 +658,7 @@ if (!storedUser) {
 }
 
 const currentUser = reactive<UserDto>({
-  ...defaultUser,
+  ...emptyUser,
   ...(storedUser ?? {}),
 });
 
@@ -672,202 +670,12 @@ const notificationSettings = reactive({
 
 const appVisibility = ref<AppVisibilityState>('visible');
 
-const mockUsers: ChannelMember[] = [
-  {
-    id: 'u-you',
-    firstName: currentUser.firstName,
-    lastName: currentUser.lastName,
-    nickName: currentUser.nickName,
-    email: currentUser.email,
-    status: currentUser.status,
-    role: 'owner',
-    draftSamples: [
-      'Práve dokončujem rekapituláciu meetingu.',
-      'Práve dokončujem rekapituláciu meetingu…',
-      'Práve dokončujem rekapituláciu meetingu. Pošlem to o chvíľu.',
-    ],
-  },
-  {
-    id: 'u-ada',
-    firstName: 'Ada',
-    lastName: 'Horváth',
-    nickName: 'ada',
-    email: 'ada@example.com',
-    status: 'online',
-    role: 'admin',
-    draftSamples: [
-      'Pracujem na wireframe pre onboarding.',
-      'Pracujem na wireframe pre onboarding…',
-      'Vyzerá to dobre, zdieľam čoskoro!',
-    ],
-  },
-  {
-    id: 'u-gab',
-    firstName: 'Gabriel',
-    lastName: 'Kováč',
-    nickName: 'gabo',
-    email: 'gabo@example.com',
-    status: 'dnd',
-    role: 'member',
-    draftSamples: [
-      'Mám návrh k API endpointom.',
-      'Mám návrh k API endpointom…',
-      'Mám návrh k API endpointom. Posielam hneď ako dokončím.',
-    ],
-  },
-  {
-    id: 'u-lia',
-    firstName: 'Lia',
-    lastName: 'Šimková',
-    nickName: 'lia',
-    email: 'lia@example.com',
-    status: 'offline',
-    role: 'member',
-    draftSamples: [
-      'Kontrolujem testovacie scenáre.',
-      'Kontrolujem testovacie scenáre…',
-      'Kontrolujem testovacie scenáre. Update odošlem.',
-    ],
-  },
-];
-
-const buildMessages = (channelName: string, amount: number): Message[] => {
-  const sampleBodies = [
-    `Nastavil som nový sprint board pre #${channelName}.`,
-    `Pripomienka: dnes o 15:00 sync call.`,
-    `Zdieľam poznámky z retrospektívy.`,
-    `@ema môžeš skontrolovať posledný commit?`,
-    `Pridala som screenshoty do wiki.`,
-    `Budúci týždeň testujeme novú notifikačnú logiku.`,
-  ];
-
-  const authors: string[] = ['ada', 'gabo', 'lia', currentUser.nickName];
-  const result: Message[] = [];
-
-  for (let index = 0; index < amount; index += 1) {
-    const sender = authors[index % authors.length]!;
-    const addressedTo = index % 5 === 0 ? 'ema' : undefined;
-    const content = sampleBodies[index % sampleBodies.length]!;
-    result.push({
-      id: uid(),
-      sender,
-      content,
-      createdAt: new Date(Date.now() - index * 600000).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      addressedTo,
-    });
-  }
-
-  return result;
-};
-
-const channels = ref<ChannelPrototype[]>([
-  {
-    id: 'general',
-    name: 'general',
-    type: 'public',
-    description: 'Firemné oznamy a celofiremná diskusia.',
-    ownerId: 'u-you',
-    isMember: true,
-    hasInvite: false,
-    pinned: true,
-    archived: false,
-    lastActiveDays: 1,
-    unread: 0,
-    typingMembers: ['ada'],
-    members: mockUsers.map((member) => ({
-      ...member,
-      role: member.id === 'u-you' ? 'owner' : member.role,
-    })),
-    pendingInvites: [],
-    bannedMembers: [],
-    pendingKickVotes: {},
-    messages: buildMessages('general', 40),
-  },
-  {
-    id: 'design-review',
-    name: 'design-review',
-    type: 'private',
-    description: 'Súkromná miestnosť pre dizajnové iterate.',
-    ownerId: 'u-ada',
-    isMember: true,
-    hasInvite: false,
-    pinned: false,
-    archived: false,
-    lastActiveDays: 5,
-    unread: 3,
-    typingMembers: ['gabo'],
-    members: mockUsers.filter((member) => member.nickName !== 'lia').map((member) => ({
-      ...member,
-      role: member.id === 'u-ada' ? 'owner' : member.role,
-    })),
-    pendingInvites: ['lia'],
-    bannedMembers: [],
-    pendingKickVotes: {},
-    messages: buildMessages('design-review', 25),
-  },
-  {
-    id: 'research-lab',
-    name: 'research-lab',
-    type: 'public',
-    description: 'Pozvánka čaká na vaše potvrdenie.',
-    ownerId: 'u-lia',
-    isMember: false,
-    hasInvite: true,
-    pinned: true,
-    archived: false,
-    lastActiveDays: 3,
-    unread: 0,
-    typingMembers: [],
-    members: mockUsers.filter((member) => member.nickName !== 'gabo'),
-    pendingInvites: ['ema'],
-    bannedMembers: [],
-    pendingKickVotes: {},
-    messages: buildMessages('research-lab', 12),
-  },
-  {
-    id: 'retro-2023',
-    name: 'retro-2023',
-    type: 'public',
-    description: 'Kanál expiroval po 30 dňoch neaktivity.',
-    ownerId: 'u-ada',
-    isMember: false,
-    hasInvite: false,
-    pinned: false,
-    archived: true,
-    lastActiveDays: 46,
-    unread: 0,
-    typingMembers: [],
-    members: [],
-    pendingInvites: [],
-    bannedMembers: [],
-    pendingKickVotes: {},
-    messages: [],
-  },
-]);
-
-const offlineQueue = reactive<Record<string, Message[]>>({});
-
-const syncMemberStatus = (userId: string, status: UserDto['status']) => {
-  channels.value.forEach((channel) => {
-    const member = channel.members.find((candidate) => candidate.id === userId);
-    if (member) {
-      member.status = status;
-    }
-  });
-};
-
-const selectedChannelId = ref<string | null>(
-  channels.value.find((channel) => channel.isMember && !channel.archived)?.id ?? null,
-);
+const channels = ref<ChannelState[]>([]);
+const selectedChannelId = ref<string | null>(null);
 
 const consoleInput = ref('');
 const consoleInputRef = ref<{ focus: () => void } | null>(null);
-
 const commandMenuOpen = ref(false);
-const messageDisplayCount = ref(20);
 
 const createChannelDialog = reactive<{
   open: boolean;
@@ -951,7 +759,7 @@ const filteredCommands = computed(() => {
 
 const sortedActiveChannels = computed(() =>
   channels.value
-    .filter((channel) => channel.isMember && !channel.archived)
+    .filter((channel) => (channel.isMember || channel.hasInvite) && !channel.archived)
     .sort((a, b) => {
       if (a.hasInvite !== b.hasInvite) {
         return a.hasInvite ? -1 : 1;
@@ -975,14 +783,7 @@ const currentUserInitials = computed(() =>
   `${currentUser.firstName?.[0] ?? ''}${currentUser.lastName?.[0] ?? ''}`.toUpperCase(),
 );
 
-const visibleMessages = computed(() => {
-  if (!selectedChannel.value) {
-    return [] as Message[];
-  }
-
-  const totalMessages = selectedChannel.value.messages.length;
-  return selectedChannel.value.messages.slice(Math.max(0, totalMessages - messageDisplayCount.value));
-});
+const visibleMessages = computed(() => selectedChannel.value?.messages ?? []);
 
 const consolePlaceholder = computed(() => {
   if (!selectedChannel.value) {
@@ -992,43 +793,32 @@ const consolePlaceholder = computed(() => {
   return 'Napíšte správu alebo príkaz (napr. /invite nickName)';
 });
 
-const channelItemClasses = (channel: ChannelPrototype) => ({
+const channelItemClasses = (channel: ChannelState) => ({
   'channel-item': true,
   'channel-item--active': selectedChannelId.value === channel.id,
   'channel-item--invite': channel.hasInvite && !channel.isMember,
 });
 
-const typingIndicator = (channel: ChannelPrototype) => {
-  if (!channel.typingMembers.length) {
+const typingIndicator = (channel: ChannelState) => {
+  if (!channel.typingPreviews.length) {
     return '';
   }
 
-  const typingList = channel.typingMembers.map((nick) => `@${nick}`).join(', ');
+  const typingList = channel.typingPreviews.map((state) => `@${state.nickName}`).join(', ');
   return `${typingList} práve píšu…`;
 };
 
-const channelOwnerName = (channel: ChannelPrototype) => {
+const channelOwnerName = (channel: ChannelState) => {
   const owner = channel.members.find((member) => member.id === channel.ownerId);
-  if (!owner) {
-    return '@' + channelOwnerFallback(channel.ownerId);
-  }
-  return '@' + owner.nickName;
+  return owner ? `@${owner.nickName}` : '@unknown';
 };
 
-const channelOwnerFallback = (ownerId: string) => {
-  const member = mockUsers.find((user) => user.id === ownerId);
-  return member?.nickName ?? 'unknown';
-};
-
-const messageClasses = (message: Message) => ({
+const messageClasses = (message: ChatMessage) => ({
   message: true,
-  'message--self': message.sender === currentUser.nickName && !message.system,
+  'message--self': message.sender === currentUser.nickName,
   'message--mention': message.addressedTo === currentUser.nickName,
-  'message--system': !!message.system,
+  'message--system': Boolean(message.system),
 });
-
-const draftTicker = ref(0);
-let draftInterval: number | null = null;
 
 const typingDrafts = computed<DraftPreview[]>(() => {
   const channel = selectedChannel.value;
@@ -1036,195 +826,254 @@ const typingDrafts = computed<DraftPreview[]>(() => {
     return [];
   }
 
-  return channel.typingMembers
-    .map((nickName, index) => {
-      const member = channel.members.find((candidate) => candidate.nickName === nickName);
-      if (!member || member.draftSamples.length === 0) {
-        return null;
-      }
-
-      const sampleIndex =
-        member.draftSamples.length === 0 ? 0 : (draftTicker.value + index) % member.draftSamples.length;
-      const body = member.draftSamples[sampleIndex] ?? '';
-
-      if (!body) {
-        return null;
-      }
-
-      return {
-        id: `${channel.id}-${nickName}-draft-${draftTicker.value}`,
-        nickName,
-        body,
-      };
-    })
-    .filter((preview): preview is DraftPreview => preview !== null);
+  return channel.typingPreviews.map((draft) => ({
+    id: `${channel.id}-${draft.userId}-${draft.updatedAt}`,
+    nickName: draft.nickName,
+    body: draft.contentPreview,
+  }));
 });
 
-const loadMoreMessages = (_index: number, done: (stop?: boolean) => void) => {
-  if (!selectedChannel.value) {
-    done();
-    return;
+const sanitizeChannelName = (rawName: string) =>
+  rawName
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9-_\s]/g, '')
+    .replace(/\s+/g, '-');
+
+const formatMessageTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+const computeLastActiveDays = (lastActivityAt: string | null) => {
+  if (!lastActivityAt) {
+    return 0;
   }
 
-  if (messageDisplayCount.value >= selectedChannel.value.messages.length) {
-    done();
-    return;
-  }
-
-  setTimeout(() => {
-    messageDisplayCount.value += 15;
-    done();
-  }, 400);
+  const diffMs = Date.now() - Date.parse(lastActivityAt);
+  return Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
 };
 
-const selectChannel = (channelId: string) => {
+const mergeMessages = (channel: ChannelState, incoming: MessageDto[]) => {
+  const byId = new Map(channel.messages.map((message) => [message.id, message]));
+  incoming.forEach((message) => byId.set(message.id, message));
+  channel.messages = Array.from(byId.values()).sort(
+    (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+  );
+};
+
+const mapChannelDto = (dto: ChannelDto, existing?: ChannelState): ChannelState => ({
+  ...dto,
+  description: existing?.description ?? '',
+  isMember: dto.membershipStatus === 'active',
+  hasInvite: dto.membershipStatus === 'invited',
+  pinned: existing?.pinned ?? false,
+  archived: false,
+  lastActiveDays: computeLastActiveDays(dto.lastActivityAt),
+  unread: dto.unreadCount,
+  typingMembers: existing?.typingMembers ?? [],
+  typingPreviews: existing?.typingPreviews ?? [],
+  pendingInvites: existing?.pendingInvites ?? [],
+  bannedMembers: existing?.bannedMembers ?? [],
+  pendingKickVotes: existing?.pendingKickVotes ?? {},
+  members: dto.members,
+  messages: existing?.messages ?? [],
+  nextCursor: existing?.nextCursor ?? null,
+  messagesLoaded: existing?.messagesLoaded ?? false,
+  loadingMessages: false,
+});
+
+const loadChannels = async () => {
+  if (!currentUser.id) {
+    return;
+  }
+
+  try {
+    const channelDtos = await fetchChannels(currentUser.id);
+    const previous = new Map(channels.value.map((channel) => [channel.id, channel]));
+
+    channels.value = channelDtos.map((dto) => mapChannelDto(dto, previous.get(dto.id)));
+
+    if (!selectedChannelId.value && channels.value.length > 0) {
+      selectedChannelId.value = channels.value.find((channel) => channel.isMember)?.id ?? channels.value[0]!.id;
+    }
+
+    if (selectedChannelId.value && !channels.value.some((channel) => channel.id === selectedChannelId.value)) {
+      selectedChannelId.value = channels.value.find((channel) => channel.isMember)?.id ?? channels.value[0]?.id ?? null;
+    }
+  } catch (error) {
+    $q.notify({
+      type: 'negative',
+      message: 'Nepodarilo sa načítať kanály.',
+    });
+    console.error(error);
+  }
+};
+
+const loadChannelMembers = async (channel: ChannelState) => {
+  if (!currentUser.id) {
+    return;
+  }
+
+  try {
+    const { members } = await fetchChannelMembers(channel.id, currentUser.id);
+    channel.members = members;
+  } catch (error) {
+    console.error(error);
+  }
+};
+
+const loadTypingForChannel = async (channel: ChannelState) => {
+  if (!currentUser.id) {
+    return;
+  }
+
+  try {
+    const typing = await fetchTypingStates(channel.id, currentUser.id);
+    channel.typingPreviews = typing;
+    channel.typingMembers = typing.map((item) => item.nickName);
+  } catch (error) {
+    console.error(error);
+  }
+};
+
+const refreshMessages = async (channel: ChannelState) => {
+  if (!currentUser.id) {
+    return;
+  }
+
+  try {
+    const { messages, nextCursor } = await fetchChannelMessages(channel.id, currentUser.id);
+    mergeMessages(channel, messages);
+    channel.nextCursor = nextCursor;
+    channel.messagesLoaded = true;
+    channel.unread = 0;
+  } catch (error) {
+    $q.notify({
+      type: 'negative',
+      message: 'Nepodarilo sa načítať správy.',
+    });
+    console.error(error);
+  }
+};
+
+const loadOlderMessages = async (channel: ChannelState) => {
+  if (!channel.nextCursor || channel.loadingMessages || !currentUser.id) {
+    return false;
+  }
+
+  channel.loadingMessages = true;
+  try {
+    const { messages, nextCursor } = await fetchChannelMessages(
+      channel.id,
+      currentUser.id,
+      channel.nextCursor,
+    );
+    const existingIds = new Set(channel.messages.map((message) => message.id));
+    const merged = [...messages.filter((message) => !existingIds.has(message.id)), ...channel.messages];
+    channel.messages = merged.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+    channel.nextCursor = nextCursor;
+    return !!nextCursor;
+  } catch (error) {
+    $q.notify({
+      type: 'negative',
+      message: 'Nepodarilo sa načítať staršie správy.',
+    });
+    console.error(error);
+    return false;
+  } finally {
+    channel.loadingMessages = false;
+  }
+};
+
+const loadMoreMessages = async (_index: number, done: (stop?: boolean) => void) => {
+  const channel = selectedChannel.value;
+  if (!channel) {
+    done();
+    return;
+  }
+
+  const hasMore = await loadOlderMessages(channel);
+  done(!hasMore);
+};
+
+const selectChannel = async (channelId: string) => {
   const channel = channels.value.find((item) => item.id === channelId);
   if (!channel) {
     return;
   }
 
   if (channel.hasInvite && !channel.isMember) {
-    acceptInvite(channel);
+    await acceptInvite(channel);
+    return;
   }
 
   selectedChannelId.value = channelId;
   channel.unread = 0;
-  messageDisplayCount.value = 20;
+
+  await Promise.all([refreshMessages(channel), loadChannelMembers(channel), loadTypingForChannel(channel)]);
 };
 
-const acceptInvite = (channel: ChannelPrototype) => {
-  channel.isMember = true;
-  channel.hasInvite = false;
-  channel.unread = 0;
-  selectedChannelId.value = channel.id;
-  channel.typingMembers = [];
-
-  $q.notify({
-    type: 'positive',
-    message: `Pripojené ku kanálu #${channel.name}.`,
-  });
+const acceptInvite = async (channel: ChannelState) => {
+  try {
+    const result = await executeCommand(currentUser.id, `/join ${channel.name}`);
+    if (result.feedback) {
+      $q.notify({ type: result.success ? 'positive' : 'warning', message: result.feedback });
+    }
+    await loadChannels();
+    selectedChannelId.value = channel.id;
+  } catch (error) {
+    $q.notify({ type: 'negative', message: 'Pozvánku sa nepodarilo prijať.' });
+    console.error(error);
+  }
 };
 
-const rejectInvite = (channel: ChannelPrototype) => {
-  channel.hasInvite = false;
-  channel.isMember = false;
-  $q.notify({
-    type: 'info',
-    message: `Pozvánka do kanála #${channel.name} bola odmietnutá.`,
-  });
+const rejectInvite = async (channel: ChannelState) => {
+  try {
+    await executeCommand(currentUser.id, '/cancel', channel.id);
+    $q.notify({ type: 'info', message: `Pozvánka do #${channel.name} bola odmietnutá.` });
+    await loadChannels();
+  } catch (error) {
+    $q.notify({ type: 'negative', message: 'Pozvánku sa nepodarilo odmietnuť.' });
+    console.error(error);
+  }
 };
 
-const leaveChannel = (channel: ChannelPrototype) => {
-  if (channel.ownerId === currentUser.id) {
-    closeChannel(channel);
-    return;
+const leaveChannel = async (channel: ChannelState) => {
+  try {
+    await leaveChannelRequest(channel.id, currentUser.id);
+    $q.notify({ type: 'info', message: `Opustili ste kanál #${channel.name}.` });
+    await loadChannels();
+    if (selectedChannelId.value === channel.id) {
+      selectedChannelId.value = sortedActiveChannels.value.find((item) => item.id !== channel.id)?.id ?? null;
+    }
+  } catch (error) {
+    $q.notify({ type: 'negative', message: 'Kanál sa nepodarilo opustiť.' });
+    console.error(error);
   }
-
-  channel.isMember = false;
-  if (selectedChannelId.value === channel.id) {
-    selectedChannelId.value =
-      sortedActiveChannels.value.find((item) => item.id !== channel.id)?.id ?? null;
-  }
-
-  $q.notify({
-    type: 'info',
-    message: `Opustili ste kanál #${channel.name}.`,
-  });
 };
 
-const closeChannel = (channel: ChannelPrototype) => {
-  channel.archived = true;
-  channel.isMember = false;
-  channel.hasInvite = false;
-  channel.pendingInvites = [];
-
-  if (selectedChannelId.value === channel.id) {
-    selectedChannelId.value =
-      sortedActiveChannels.value.find((item) => item.id !== channel.id)?.id ?? null;
+const closeChannel = async (channel: ChannelState) => {
+  try {
+    await executeCommand(currentUser.id, '/quit', channel.id);
+    $q.notify({ type: 'warning', message: `Kanál #${channel.name} bol zrušený.` });
+    await loadChannels();
+  } catch (error) {
+    $q.notify({ type: 'negative', message: 'Kanál sa nepodarilo zrušiť.' });
+    console.error(error);
   }
-
-  $q.notify({
-    type: 'warning',
-    message: `Kanál #${channel.name} bol zrušený. Názov je opäť dostupný.`,
-  });
 };
 
-const reclaimChannel = (channelName: string) => {
-  const sanitized = sanitizeChannelName(channelName);
-  if (!sanitized) {
-    $q.notify({
-      type: 'negative',
-      message: 'Názov kanála musí obsahovať aspoň jeden znak.',
-    });
-    return;
-  }
-
-  const activeExists = channels.value.some(
-    (channel) => channel.name === sanitized && !channel.archived,
-  );
-  if (activeExists) {
-    $q.notify({
-      type: 'info',
-      message: `Kanál #${sanitized} je už aktívny.`,
-    });
-    selectedChannelId.value =
-      channels.value.find((channel) => channel.name === sanitized && !channel.archived)?.id ?? null;
-    return;
-  }
-
-  const dormantChannel = channels.value.find(
-    (channel) => channel.name === sanitized && channel.archived,
-  );
-
-  if (!dormantChannel) {
-    $q.notify({
-      type: 'warning',
-      message: `Kanál #${sanitized} sa medzi archívmi nenašiel.`,
-    });
-    return;
-  }
-
-  dormantChannel.archived = false;
-  dormantChannel.isMember = true;
-  dormantChannel.ownerId = currentUser.id;
-  dormantChannel.hasInvite = false;
-  dormantChannel.pinned = false;
-  dormantChannel.lastActiveDays = 0;
-  dormantChannel.unread = 0;
-  dormantChannel.typingMembers = [];
-  dormantChannel.pendingInvites = [];
-  dormantChannel.bannedMembers = [];
-  dormantChannel.pendingKickVotes = {};
-  dormantChannel.members = mockUsers.map((member) => ({
-    ...member,
-    role: member.id === currentUser.id ? 'owner' : 'member',
-  }));
-  dormantChannel.messages = [
-    {
-      id: uid(),
-      sender: 'system',
-      content: `Kanál #${sanitized} bol znovu aktivovaný.`,
-      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      system: true,
-    },
-  ];
-
-  channels.value = [...channels.value];
-  selectedChannelId.value = dormantChannel.id;
-
-  $q.notify({
-    type: 'positive',
-    message: `Kanál #${sanitized} bol úspešne reaktivovaný.`,
-  });
-};
-
-const sendMessage = (content: string) => {
+const sendMessage = async (content: string) => {
   const channel = selectedChannel.value;
   if (!channel) {
     $q.notify({
       type: 'warning',
       message: 'Najprv si vyberte kanál.',
     });
+    return;
+  }
+
+  if (!channel.isMember) {
+    $q.notify({ type: 'warning', message: 'Najprv prijmite pozvánku do kanála.' });
     return;
   }
 
@@ -1241,405 +1090,57 @@ const sendMessage = (content: string) => {
     return;
   }
 
-  const mentionMatch = trimmed.match(/@(\w+)/);
-  const addressedTo = mentionMatch ? mentionMatch[1] : undefined;
-
-  const message: Message = {
-    id: uid(),
-    sender: currentUser.nickName,
-    content: trimmed,
-    createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    addressedTo,
-  };
-
-  channel.messages.push(message);
-  channel.lastActiveDays = 0;
+  try {
+    const message = await sendChannelMessage(channel.id, currentUser.id, trimmed);
+    mergeMessages(channel, [message]);
+    channel.lastActiveDays = 0;
+  } catch (error) {
+    $q.notify({ type: 'negative', message: 'Správu sa nepodarilo odoslať.' });
+    console.error(error);
+  }
 };
 
-const handleConsoleSubmit = () => {
+const handleConsoleSubmit = async () => {
   const input = consoleInput.value.trim();
   if (!input) {
     return;
   }
 
   if (input.startsWith('/')) {
-    handleCommand(input);
+    await handleCommand(input);
   } else {
-    sendMessage(input);
+    await sendMessage(input);
   }
 
   consoleInput.value = '';
   commandMenuOpen.value = false;
 };
 
-const sanitizeChannelName = (rawName: string) =>
-  rawName
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9-_\s]/g, '')
-    .replace(/\s+/g, '-');
-
-const ensureChannel = (name: string, type: ChannelType) => {
-  const sanitized = sanitizeChannelName(name);
-  if (!sanitized) {
-    return null;
-  }
-
-  const existing = channels.value.find((channel) => channel.name === sanitized && !channel.archived);
-  if (existing) {
-    return existing;
-  }
-
-  const archivedChannel = channels.value.find(
-    (channel) => channel.name === sanitized && channel.archived,
-  );
-  if (archivedChannel) {
-    archivedChannel.archived = false;
-    archivedChannel.isMember = true;
-    archivedChannel.ownerId = currentUser.id;
-    archivedChannel.type = type;
-    archivedChannel.description = 'Znovuaktivovaný cez príkaz /join.';
-    archivedChannel.lastActiveDays = 0;
-    archivedChannel.unread = 0;
-    archivedChannel.typingMembers = [];
-    archivedChannel.pendingInvites = [];
-    archivedChannel.bannedMembers = [];
-    archivedChannel.pendingKickVotes = {};
-    archivedChannel.members = mockUsers.map((member) => ({
-      ...member,
-      role: member.id === currentUser.id ? 'owner' : 'member',
-    }));
-    archivedChannel.messages.push({
-      id: uid(),
-      sender: 'system',
-      content: `Kanál bol znovu aktivovaný používateľom @${currentUser.nickName}.`,
-      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      system: true,
-    });
-    return archivedChannel;
-  }
-
-  const newChannel: ChannelPrototype = {
-    id: uid(),
-    name: sanitized,
-    type,
-    description: 'Nový kanál vytvorený cez príkaz /join.',
-    ownerId: currentUser.id,
-    isMember: true,
-    hasInvite: false,
-    pinned: false,
-    archived: false,
-    lastActiveDays: 0,
-    unread: 0,
-    typingMembers: [],
-    members: mockUsers.map((member) => ({
-      ...member,
-      role: member.id === currentUser.id ? 'owner' : 'member',
-    })),
-    pendingInvites: [],
-    bannedMembers: [],
-    pendingKickVotes: {},
-    messages: [
-      {
-        id: uid(),
-        sender: 'system',
-        content: `Kanál #${sanitized} bol vytvorený.`,
-        createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        system: true,
-      },
-    ],
-  };
-
-  channels.value.push(newChannel);
-  return newChannel;
-};
-
-const handleCommand = (input: string) => {
-  const [command, ...rawArgs] = input.split(/\s+/);
-  const args = rawArgs.filter(Boolean);
-
-  switch (command) {
-    case '/join': {
-      if (args.length === 0) {
-        $q.notify({
-          type: 'warning',
-          message: 'Použitie: /join channelName [private]',
-        });
-        break;
-      }
-
-      const name = args[0]!;
-      const type = (args[1] === 'private' ? 'private' : 'public') as ChannelType;
-      const channel = ensureChannel(name, type);
-
-      if (!channel) {
-        $q.notify({
-          type: 'negative',
-          message: 'Kanál musí mať platný názov.',
-        });
-        break;
-      }
-
-      if (channel.bannedMembers.includes(currentUser.nickName)) {
-        $q.notify({
-          type: 'negative',
-          message: `Máte trvalý zákaz pre #${channel.name}.`,
-        });
-        break;
-      }
-
-      channel.isMember = true;
-      channel.hasInvite = false;
-      channel.unread = 0;
-      selectedChannelId.value = channel.id;
-
-      $q.notify({
-        type: 'positive',
-        message: `Pripojené ku kanálu #${channel.name}.`,
-      });
-
-      break;
+const handleCommand = async (input: string) => {
+  try {
+    const result = await executeCommand(currentUser.id, input, selectedChannelId.value ?? undefined);
+    if (result.feedback) {
+      $q.notify({ type: result.success ? 'positive' : 'warning', message: result.feedback });
     }
 
-    case '/invite': {
-      const channel = selectedChannel.value;
-      if (!channel) {
-        $q.notify({
-          type: 'warning',
-          message: 'Najprv vyberte kanál.',
-        });
-        break;
+    if (result.channel) {
+      await loadChannels();
+      selectedChannelId.value = result.channel.id;
+      const channel = channels.value.find((item) => item.id === result.channel?.id);
+      if (channel) {
+        await Promise.all([refreshMessages(channel), loadChannelMembers(channel)]);
       }
-
-      if (args.length < 1) {
-        $q.notify({
-          type: 'warning',
-          message: 'Použitie: /invite nickName',
-        });
-        break;
-      }
-
-      const nickName = args[0]!;
-      if (channel.type === 'private' && currentUser.id !== channel.ownerId) {
-        $q.notify({
-          type: 'negative',
-          message: 'Pozývať do súkromného kanála môže iba správca.',
-        });
-        break;
-      }
-
-      if (!channel.pendingInvites.includes(nickName)) {
-        channel.pendingInvites.push(nickName);
-      }
-
-      channel.hasInvite = channel.pendingInvites.some((nick) => nick === currentUser.nickName);
-
-      $q.notify({
-        type: 'positive',
-        message: `Pozvánka pre @${nickName} odoslaná.`,
-      });
-      break;
+    } else {
+      await loadChannels();
     }
 
-    case '/revoke': {
-      const channel = selectedChannel.value;
-      if (!channel) {
-        $q.notify({
-          type: 'warning',
-          message: 'Najprv vyberte kanál.',
-        });
-        break;
-      }
-
-      if (args.length < 1) {
-        $q.notify({
-          type: 'warning',
-          message: 'Použitie: /revoke nickName',
-        });
-        break;
-      }
-
-      const nickName = args[0]!;
-      channel.pendingInvites = channel.pendingInvites.filter((item) => item !== nickName);
-      channel.hasInvite = channel.pendingInvites.includes(currentUser.nickName);
-
-      $q.notify({
-        type: 'info',
-        message: `Pozvánka pre @${nickName} bola zrušená.`,
-      });
-      break;
+    if (result.members && selectedChannel.value) {
+      selectedChannel.value.members = result.members;
     }
-
-    case '/kick': {
-      const channel = selectedChannel.value;
-      if (!channel) {
-        $q.notify({
-          type: 'warning',
-          message: 'Najprv vyberte kanál.',
-        });
-        break;
-      }
-
-      if (args.length < 1) {
-        $q.notify({
-          type: 'warning',
-          message: 'Použitie: /kick nickName',
-        });
-        break;
-      }
-
-      const targetNick = args[0]!;
-      if (channel.ownerId === currentUser.id) {
-        performKick(channel, targetNick, true);
-        break;
-      }
-
-      performKick(channel, targetNick, false);
-      break;
-    }
-
-    case '/quit': {
-      const channel = selectedChannel.value;
-      if (!channel) {
-        $q.notify({
-          type: 'warning',
-          message: 'Najprv vyberte kanál.',
-        });
-        break;
-      }
-
-      if (channel.ownerId !== currentUser.id) {
-        $q.notify({
-          type: 'negative',
-          message: 'Len správca môže zrušiť kanál.',
-        });
-        break;
-      }
-
-      closeChannel(channel);
-      break;
-    }
-
-    case '/cancel': {
-      const channel = selectedChannel.value;
-      if (!channel) {
-        $q.notify({
-          type: 'warning',
-          message: 'Najprv vyberte kanál.',
-        });
-        break;
-      }
-
-      leaveChannel(channel);
-      break;
-    }
-
-    case '/list': {
-      if (!selectedChannel.value) {
-        $q.notify({
-          type: 'warning',
-          message: 'Najprv vyberte kanál.',
-        });
-        break;
-      }
-
-      $q.notify({
-        type: 'info',
-        multiLine: true,
-        message: selectedChannel.value.members
-          .map((member) => `@${member.nickName} (${member.status})`)
-          .join(', '),
-        caption: 'Členovia kanála',
-        timeout: 4000,
-      });
-      break;
-    }
-
-    case '/help':
-    default: {
-      showHelp();
-      break;
-    }
+  } catch (error) {
+    $q.notify({ type: 'negative', message: 'Príkaz sa nepodarilo spracovať.' });
+    console.error(error);
   }
-};
-
-const performKick = (channel: ChannelPrototype, nickName: string, isAdminKick: boolean) => {
-  if (channel.ownerId === currentUser.id && nickName === currentUser.nickName) {
-    $q.notify({
-      type: 'negative',
-      message: 'Nemôžete vyhodiť sami seba.',
-    });
-    return;
-  }
-
-  channel.pendingKickVotes[nickName] = (channel.pendingKickVotes[nickName] ?? 0) + 1;
-
-  if (isAdminKick || channel.pendingKickVotes[nickName] >= 3) {
-    channel.members = channel.members.filter((member) => member.nickName !== nickName);
-    channel.bannedMembers.push(nickName);
-    delete channel.pendingKickVotes[nickName];
-
-    $q.notify({
-      type: 'warning',
-      message: `@${nickName} bol odstránený z kanála.`,
-    });
-  } else {
-    const remainingVotes = Math.max(0, 3 - channel.pendingKickVotes[nickName]);
-    $q.notify({
-      type: 'info',
-      message: `Hlas odoslaný. Potrebné hlasy na vyhodenie: ${remainingVotes}.`,
-    });
-  }
-};
-
-const maybeNotify = (channel: ChannelPrototype, message: Message) => {
-  if (message.sender === currentUser.nickName) {
-    return;
-  }
-
-  if (!notificationSettings.enabled) {
-    return;
-  }
-
-  if (notificationSettings.mentionsOnly && message.addressedTo !== currentUser.nickName) {
-    return;
-  }
-
-  if (notificationSettings.bannersWhenHidden && appVisibility.value !== 'hidden') {
-    return;
-  }
-
-  if (currentUser.status === 'dnd') {
-    return;
-  }
-
-  $q.notify({
-    icon: 'notifications',
-    color: 'primary',
-    message: `${message.sender} v #${channel.name}`,
-    caption: message.content.slice(0, 72),
-    timeout: 3000,
-  });
-};
-
-const flushOfflineQueue = () => {
-  Object.entries(offlineQueue).forEach(([channelId, queuedMessages]) => {
-    const channel = channels.value.find((item) => item.id === channelId);
-    if (!channel || queuedMessages.length === 0) {
-      return;
-    }
-
-    queuedMessages.forEach((message) => {
-      channel.messages.push(message);
-      channel.lastActiveDays = 0;
-      if (selectedChannelId.value !== channel.id) {
-        channel.unread += 1;
-      }
-      maybeNotify(channel, message);
-    });
-
-    offlineQueue[channelId] = [];
-  });
 };
 
 const autofillCommand = (command: CommandDefinition) => {
@@ -1668,7 +1169,7 @@ const openCreateChannelDialog = () => {
   };
 };
 
-const confirmChannelCreation = () => {
+const confirmChannelCreation = async () => {
   const { name, type, description } = createChannelDialog.form;
   const sanitized = sanitizeChannelName(name);
 
@@ -1680,28 +1181,56 @@ const confirmChannelCreation = () => {
     return;
   }
 
-  const exists = channels.value.some((channel) => channel.name === sanitized && !channel.archived);
-  if (exists) {
+  try {
+    const result = await executeCommand(
+      currentUser.id,
+      `/join ${sanitized}${type === 'private' ? ' private' : ''}`,
+    );
+    if (result.feedback) {
+      $q.notify({ type: result.success ? 'positive' : 'warning', message: result.feedback });
+    }
+
+    await loadChannels();
+    const channel = channels.value.find((item) => item.name === sanitized);
+    if (channel) {
+      channel.description = description || channel.description || '';
+      selectedChannelId.value = channel.id;
+    }
+    createChannelDialog.open = false;
+  } catch (error) {
+    $q.notify({ type: 'negative', message: 'Kanál sa nepodarilo vytvoriť.' });
+    console.error(error);
+  }
+};
+
+const reclaimChannel = async (channelName: string) => {
+  const sanitized = sanitizeChannelName(channelName);
+  if (!sanitized) {
     $q.notify({
       type: 'negative',
-      message: `Kanál #${sanitized} už existuje.`,
+      message: 'Názov kanála musí obsahovať aspoň jeden znak.',
     });
     return;
   }
 
-  const channel = ensureChannel(sanitized, type);
-  if (!channel) {
-    return;
+  try {
+    await executeCommand(currentUser.id, `/join ${sanitized}`);
+    await loadChannels();
+    const channel = channels.value.find((item) => item.name === sanitized);
+    if (channel) {
+      selectedChannelId.value = channel.id;
+      await refreshMessages(channel);
+    }
+    $q.notify({ type: 'positive', message: `Kanál #${sanitized} bol reaktivovaný.` });
+  } catch (error) {
+    $q.notify({ type: 'negative', message: 'Kanál sa nepodarilo obnoviť.' });
+    console.error(error);
   }
-
-  channel.description = description || 'Nový kanál vytvorený z modálneho dialógu.';
-  selectedChannelId.value = channel.id;
-  createChannelDialog.open = false;
 };
 
 const logout = () => {
   clearCurrentUser();
-  Object.assign(currentUser, defaultUser);
+  Object.assign(currentUser, emptyUser);
 
   $q.notify({
     type: 'info',
@@ -1713,48 +1242,102 @@ const logout = () => {
   });
 };
 
-onMounted(() => {
-  draftInterval = window.setInterval(() => {
-    draftTicker.value += 1;
-  }, 1600);
+let messagePollInterval: number | null = null;
+let channelPollInterval: number | null = null;
+let typingUpdateTimer: number | null = null;
+
+onMounted(async () => {
+  await loadChannels();
+  if (selectedChannel.value) {
+    await Promise.all([
+      refreshMessages(selectedChannel.value),
+      loadChannelMembers(selectedChannel.value),
+      loadTypingForChannel(selectedChannel.value),
+    ]);
+  }
+
+  messagePollInterval = window.setInterval(() => {
+    const channel = selectedChannel.value;
+    if (channel) {
+      void refreshMessages(channel);
+      void loadTypingForChannel(channel);
+    }
+  }, 4000);
+
+  channelPollInterval = window.setInterval(() => {
+    void loadChannels();
+  }, 7000);
 });
 
 watch(() => consoleInput.value, (value) => {
   if (!value.startsWith('/')) {
     commandMenuOpen.value = false;
+  } else {
+    commandMenuOpen.value = filteredCommands.value.length > 0;
+  }
+
+  const channel = selectedChannel.value;
+  if (!channel) {
     return;
   }
-  commandMenuOpen.value = filteredCommands.value.length > 0;
+
+  if (!currentUser.id) {
+    return;
+  }
+
+  if (typingUpdateTimer !== null) {
+    window.clearTimeout(typingUpdateTimer);
+  }
+
+  typingUpdateTimer = window.setTimeout(() => {
+    const content = value.startsWith('/') ? '' : value;
+    void updateTypingState(channel.id, currentUser.id, content);
+  }, 250);
 });
 
 watch(
-  () => currentUser.status,
-  (newStatus, oldStatus) => {
-    const userMock = mockUsers.find((user) => user.id === currentUser.id);
-    if (userMock) {
-      userMock.status = newStatus;
+  () => selectedChannelId.value,
+  async (newId) => {
+    if (!newId) {
+      return;
     }
 
-    syncMemberStatus(currentUser.id, newStatus);
-
-    if (newStatus === 'online' && oldStatus === 'offline') {
-      flushOfflineQueue();
-      $q.notify({
-        type: 'positive',
-        message: 'Vrátili ste sa online, kanály boli synchronizované.',
-      });
+    const channel = channels.value.find((item) => item.id === newId);
+    if (channel) {
+      await Promise.all([refreshMessages(channel), loadChannelMembers(channel), loadTypingForChannel(channel)]);
     }
   },
 );
 
-watch(selectedChannelId, () => {
-  messageDisplayCount.value = 20;
-});
+watch(
+  () => currentUser.status,
+  async (newStatus, oldStatus) => {
+    if (!newStatus || newStatus === oldStatus || !currentUser.id) {
+      return;
+    }
+
+    try {
+      await executeCommand(currentUser.id, `/status ${newStatus}`);
+    } catch (error) {
+      console.error(error);
+    }
+  },
+);
 
 onBeforeUnmount(() => {
-  if (draftInterval !== null) {
-    clearInterval(draftInterval);
-    draftInterval = null;
+  if (messagePollInterval !== null) {
+    clearInterval(messagePollInterval);
+    messagePollInterval = null;
+  }
+
+  if (channelPollInterval !== null) {
+    clearInterval(channelPollInterval);
+    channelPollInterval = null;
+  }
+
+  if (typingUpdateTimer !== null) {
+    window.clearTimeout(typingUpdateTimer);
+    typingUpdateTimer = null;
   }
 });
 </script>
