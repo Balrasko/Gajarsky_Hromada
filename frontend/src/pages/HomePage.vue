@@ -588,7 +588,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useQuasar } from 'quasar';
 import type { ChannelDto, ChannelMemberDto, MessageDto, TypingStateDto, UserDto } from '@vpwa/shared';
 import { useRouter } from 'vue-router';
-
+import socket, { socketRequest } from 'src/services/socket';
 import {
   executeCommand,
   fetchChannelMembers,
@@ -672,6 +672,7 @@ const appVisibility = ref<AppVisibilityState>('visible');
 
 const channels = ref<ChannelState[]>([]);
 const selectedChannelId = ref<string | null>(null);
+const subscribedChannels = new Set<string>();
 
 const consoleInput = ref('');
 const consoleInputRef = ref<{ focus: () => void } | null>(null);
@@ -892,6 +893,10 @@ const loadChannels = async () => {
 
     channels.value = channelDtos.map((dto) => mapChannelDto(dto, previous.get(dto.id)));
 
+    for (const channel of channels.value.filter((channel) => channel.isMember)) {
+      void ensureSubscribed(channel.id);
+    }
+
     if (!selectedChannelId.value && channels.value.length > 0) {
       selectedChannelId.value = channels.value.find((channel) => channel.isMember)?.id ?? channels.value[0]!.id;
     }
@@ -1008,6 +1013,7 @@ const selectChannel = async (channelId: string) => {
 
   selectedChannelId.value = channelId;
   channel.unread = 0;
+  void ensureSubscribed(channelId);
 
   await Promise.all([refreshMessages(channel), loadChannelMembers(channel), loadTypingForChannel(channel)]);
 };
@@ -1231,6 +1237,7 @@ const reclaimChannel = async (channelName: string) => {
 const logout = () => {
   clearCurrentUser();
   Object.assign(currentUser, emptyUser);
+  subscribedChannels.clear();
 
   $q.notify({
     type: 'info',
@@ -1246,7 +1253,43 @@ let messagePollInterval: number | null = null;
 let channelPollInterval: number | null = null;
 let typingUpdateTimer: number | null = null;
 
+const ensureSubscribed = async (channelId: string) => {
+  if (subscribedChannels.has(channelId)) {
+    return;
+  }
+
+  if (!currentUser.id) {
+    return;
+  }
+
+  try {
+    await socketRequest('channels:subscribe', { channelId, userId: currentUser.id });
+    subscribedChannels.add(channelId);
+  } catch (error) {
+    console.error('Failed to subscribe to channel', channelId, error);
+  }
+};
+
+const handleIncomingMessage = (payload: { message: MessageDto }) => {
+  const message = payload.message;
+  const channel = channels.value.find((item) => item.id === message.channelId);
+  if (!channel) {
+    return;
+  }
+
+  mergeMessages(channel, [message]);
+  channel.lastActiveDays = 0;
+
+  if (selectedChannelId.value !== channel.id) {
+    channel.unread = (channel.unread ?? 0) + 1;
+  } else {
+    channel.unread = 0;
+  }
+};
+
 onMounted(async () => {
+  socket.on('channels:message:new', handleIncomingMessage);
+
   await loadChannels();
   if (selectedChannel.value) {
     await Promise.all([
@@ -1334,6 +1377,8 @@ onBeforeUnmount(() => {
     clearInterval(channelPollInterval);
     channelPollInterval = null;
   }
+
+  socket.off('channels:message:new', handleIncomingMessage);
 
   if (typingUpdateTimer !== null) {
     window.clearTimeout(typingUpdateTimer);
