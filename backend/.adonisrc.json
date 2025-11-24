@@ -19,7 +19,9 @@
   "providers": [
     "@adonisjs/core",
     "@adonisjs/lucid",
-    "./providers/AppProvider"
+    "./providers/AppProvider",
+    "./providers/SocketProvider"
+
   ],
   "aceProviders": [
     "@adonisjs/repl"
