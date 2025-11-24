@@ -1,12 +1,12 @@
-import { ApplicationContract } from '@ioc:Adonis/Core/Application'
-import Hash from '@ioc:Adonis/Core/Hash'
+import type { ApplicationContract } from '@ioc:Adonis/Core/Application'
 import { DateTime } from 'luxon'
 import { Server as IOServer, type Socket } from 'socket.io'
 import { Exception } from '@adonisjs/core/build/standalone'
+import type { HashContract } from '@ioc:Adonis/Core/Hash'
 
-import ChatService from 'App/Services/ChatService'
-import User from 'App/Models/User'
-import ChannelMembership from 'App/Models/ChannelMembership'
+import type ChatServiceType from 'App/Services/ChatService'
+import type UserModel from 'App/Models/User'
+import type ChannelMembershipModel from 'App/Models/ChannelMembership'
 
 type Ack<T> = (response: { ok: true; data: T } | { ok: false; message?: string; status?: number }) => void
 
@@ -16,6 +16,10 @@ export default class SocketProvider {
   public register() {}
 
   private validatorModule!: typeof import('@ioc:Adonis/Core/Validator')
+  private hash!: HashContract
+  private ChatService!: ChatServiceType
+  private User!: typeof UserModel
+  private ChannelMembership!: typeof ChannelMembershipModel
 
   private respond<T>(
     socket: Socket,
@@ -30,7 +34,11 @@ export default class SocketProvider {
         reply({ ok: true, data })
       } catch (error) {
         const status = typeof (error as any)?.status === 'number' ? (error as any).status : undefined
-        const message = (error as Error)?.message ?? 'Unexpected error'
+        const validationErrors = (error as any)?.messages?.errors as { message?: string }[] | undefined
+        const message =
+          validationErrors?.[0]?.message ||
+          (error as Error)?.message ||
+          'Unexpected error'
         console.error(`[socket:${event}]`, error)
         reply({ ok: false, message, status })
       }
@@ -38,7 +46,7 @@ export default class SocketProvider {
   }
 
   private async markUserStatus(userId: string, status: User['status']) {
-    const user = await User.find(userId)
+    const user = await this.User.find(userId)
     if (!user) {
       return
     }
@@ -64,12 +72,12 @@ export default class SocketProvider {
 
       const payloadData = await validator.validate({ schema: registerSchema, data: payload })
 
-      const user = await User.create({
+      const user = await this.User.create({
         firstName: payloadData.firstName,
         lastName: payloadData.lastName,
         nickName: payloadData.nickName,
         email: payloadData.email,
-        password: await Hash.make(payloadData.password),
+        password: await this.hash.make(payloadData.password),
         status: 'offline'
       })
 
@@ -86,13 +94,13 @@ export default class SocketProvider {
 
       const payloadData = await validator.validate({ schema: loginSchema, data: payload })
 
-      const user = await User.query().where('email', payloadData.email).first()
+      const user = await this.User.query().where('email', payloadData.email).first()
 
       if (!user) {
         throw new Error('Invalid credentials')
       }
 
-      const isValid = await Hash.verify(user.password, payloadData.password)
+      const isValid = await this.hash.verify(user.password, payloadData.password)
 
       if (!isValid) {
         throw new Error('Invalid credentials')
@@ -107,19 +115,19 @@ export default class SocketProvider {
     })
 
     this.respond(socket, 'users:list', async () => {
-      const users = await User.query().orderBy('created_at', 'desc')
+      const users = await this.User.query().orderBy('created_at', 'desc')
       return { users: users.map((u) => u.toDto()) }
     })
 
     this.respond(socket, 'channels:list', async (payload) => {
       const { userId } = payload
-      const channels = await ChatService.getUserChannels(userId)
+      const channels = await this.ChatService.getUserChannels(userId)
       return { channels }
     })
 
     this.respond(socket, 'channels:members', async (payload) => {
       const { channelId, userId } = payload
-      const result = await ChatService.handleCommand(userId, '/list', channelId)
+      const result = await this.ChatService.handleCommand(userId, '/list', channelId)
 
       return {
         members: result.members ?? [],
@@ -129,30 +137,30 @@ export default class SocketProvider {
 
     this.respond(socket, 'channels:leave', async (payload) => {
       const { channelId, userId } = payload
-      const result = await ChatService.handleCommand(userId, '/cancel', channelId)
+      const result = await this.ChatService.handleCommand(userId, '/cancel', channelId)
       return { feedback: result.feedback }
     })
 
     this.respond(socket, 'channels:typing:update', async (payload) => {
       const { channelId, userId, content } = payload
-      await ChatService.updateTypingState(userId, channelId, content ?? '')
+      await this.ChatService.updateTypingState(userId, channelId, content ?? '')
       return { updatedAt: DateTime.utc().toISO() }
     })
 
     this.respond(socket, 'channels:typing:list', async (payload) => {
       const { channelId, userId } = payload
-      const typing = await ChatService.getTypingStates(userId, channelId)
+      const typing = await this.ChatService.getTypingStates(userId, channelId)
       return { typing }
     })
 
     this.respond(socket, 'channels:messages', async (payload) => {
       const { channelId, userId, cursor, limit } = payload
-      return ChatService.fetchMessages(userId, channelId, cursor, limit)
+      return this.ChatService.fetchMessages(userId, channelId, cursor, limit)
     })
 
     this.respond(socket, 'channels:message:send', async (payload) => {
       const { channelId, userId, content } = payload
-      const message = await ChatService.sendMessage(userId, channelId, content)
+      const message = await this.ChatService.sendMessage(userId, channelId, content)
 
       io.to(channelId).emit('channels:message:new', { message })
 
@@ -161,7 +169,7 @@ export default class SocketProvider {
 
     this.respond(socket, 'commands:execute', async (payload) => {
       const { userId, command, channelId } = payload
-      const result = await ChatService.handleCommand(userId, command, channelId ?? undefined)
+      const result = await this.ChatService.handleCommand(userId, command, channelId ?? undefined)
       return { result }
     })
 
@@ -173,7 +181,7 @@ export default class SocketProvider {
         throw new Exception('User not authenticated', 401)
       }
 
-      const membership = await ChannelMembership.query()
+      const membership = await this.ChannelMembership.query()
         .where('channelId', channelId)
         .andWhere('userId', authenticatedUserId)
         .andWhere('status', 'active')
@@ -199,7 +207,16 @@ export default class SocketProvider {
         return
       }
 
+      const resolveBinding = <T>(binding: string): T => {
+        const mod = this.app.container.use(binding) as any
+        return (mod?.default as T) ?? (mod as T)
+      }
+
       this.validatorModule = this.app.container.use('Adonis/Core/Validator')
+      this.hash = this.app.container.use('Adonis/Core/Hash')
+      this.ChatService = resolveBinding<ChatServiceType>('App/Services/ChatService')
+      this.User = resolveBinding<typeof UserModel>('App/Models/User')
+      this.ChannelMembership = resolveBinding<typeof ChannelMembershipModel>('App/Models/ChannelMembership')
 
       const io = new IOServer(serverInstance, {
         cors: { origin: '*' }

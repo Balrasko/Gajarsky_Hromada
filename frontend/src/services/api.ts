@@ -1,5 +1,3 @@
-import axios from 'axios';
-
 import type {
   ChannelDto,
   ChannelMemberDto,
@@ -8,6 +6,8 @@ import type {
   TypingStateDto,
   UserDto,
 } from '@vpwa/shared';
+
+import { socketRequest } from './socket';
 
 export interface RegisterPayload {
   firstName: string;
@@ -22,56 +22,41 @@ export interface LoginPayload {
   password: string;
 }
 
-const api = axios.create({
-  baseURL: '/api',
-  timeout: 10_000,
-});
-
-const unwrap = <T>(value: T) => value;
-
 export const registerUser = async (payload: RegisterPayload): Promise<UserDto> => {
-  const { data } = await api.post<{ user: UserDto }>('/auth/register', payload);
-  return unwrap(data.user);
+  const { user } = await socketRequest<{ user: UserDto }>('auth:register', payload);
+  return user;
 };
 
 export const loginUser = async (payload: LoginPayload): Promise<UserDto> => {
-  const { data } = await api.post<{ user: UserDto }>('/auth/login', payload);
-  return unwrap(data.user);
+  const { user } = await socketRequest<{ user: UserDto }>('auth:login', payload);
+  return user;
 };
 
 export const fetchUsers = async (): Promise<UserDto[]> => {
-  const { data } = await api.get<{ users: UserDto[] }>('/users');
-  return unwrap(data.users);
+  const { users } = await socketRequest<{ users: UserDto[] }>('users:list');
+  return users;
 };
 
 export const fetchChannels = async (userId: string): Promise<ChannelDto[]> => {
-  const { data } = await api.get<{ channels: ChannelDto[] }>('/channels', {
-    params: { userId },
-  });
-  return unwrap(data.channels);
+  const { channels } = await socketRequest<{ channels: ChannelDto[] }>('channels:list', { userId });
+  return channels;
 };
 
 export const fetchChannelMembers = async (
   channelId: string,
   userId: string,
 ): Promise<{ members: ChannelMemberDto[]; feedback?: string }> => {
-  const { data } = await api.get<{ members: ChannelMemberDto[]; feedback?: string }>(
-    `/channels/${channelId}/members`,
-    {
-      params: { userId },
-    },
-  );
-  return data;
+  return socketRequest<{ members: ChannelMemberDto[]; feedback?: string }>('channels:members', {
+    channelId,
+    userId,
+  });
 };
 
 export const leaveChannelRequest = async (
   channelId: string,
   userId: string,
 ): Promise<{ feedback?: string }> => {
-  const { data } = await api.post<{ feedback?: string }>(`/channels/${channelId}/leave`, {
-    userId,
-  });
-  return data;
+  return socketRequest<{ feedback?: string }>('channels:leave', { channelId, userId });
 };
 
 export const fetchChannelMessages = async (
@@ -80,14 +65,12 @@ export const fetchChannelMessages = async (
   cursor?: string,
   limit = 30,
 ): Promise<{ messages: MessageDto[]; nextCursor: string | null }> => {
-  const { data } = await api.get<{ messages: MessageDto[]; nextCursor: string | null }>(
-    `/channels/${channelId}/messages`,
-    {
-      params: { userId, cursor, limit },
-    },
-  );
-
-  return data;
+  return socketRequest<{ messages: MessageDto[]; nextCursor: string | null }>('channels:messages', {
+    channelId,
+    userId,
+    cursor,
+    limit,
+  });
 };
 
 export const sendChannelMessage = async (
@@ -95,11 +78,12 @@ export const sendChannelMessage = async (
   userId: string,
   content: string,
 ): Promise<MessageDto> => {
-  const { data } = await api.post<{ message: MessageDto }>(`/channels/${channelId}/messages`, {
+  const { message } = await socketRequest<{ message: MessageDto }>('channels:message:send', {
+    channelId,
     userId,
     content,
   });
-  return data.message;
+  return message;
 };
 
 export const executeCommand = async (
@@ -107,13 +91,13 @@ export const executeCommand = async (
   command: string,
   channelId?: string,
 ): Promise<CommandResultDto> => {
-  const { data } = await api.post<{ result: CommandResultDto }>('/commands', {
+  const { result } = await socketRequest<{ result: CommandResultDto }>('commands:execute', {
     userId,
     command,
     channelId,
   });
 
-  return data.result;
+  return result;
 };
 
 export const updateTypingState = async (
@@ -121,15 +105,16 @@ export const updateTypingState = async (
   userId: string,
   content: string,
 ) => {
-  await api.post(`/channels/${channelId}/typing`, { userId, content });
+  await socketRequest('channels:typing:update', { channelId, userId, content });
 };
 
 export const fetchTypingStates = async (
   channelId: string,
   userId: string,
 ): Promise<TypingStateDto[]> => {
-  const { data } = await api.get<{ typing: TypingStateDto[] }>(`/channels/${channelId}/typing`, {
-    params: { userId },
+  const { typing } = await socketRequest<{ typing: TypingStateDto[] }>('channels:typing:list', {
+    channelId,
+    userId,
   });
-  return data.typing;
+  return typing;
 };

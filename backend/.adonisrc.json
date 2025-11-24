@@ -19,6 +19,7 @@
   "providers": [
     "@adonisjs/core",
     "@adonisjs/lucid",
+    "@adonisjs/validator",
     "./providers/AppProvider",
     "./providers/SocketProvider"
 

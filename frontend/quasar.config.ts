@@ -12,8 +12,7 @@ export default configure((/* ctx */) => {
     // app boot file (/src/boot)
     // --> boot files are part of "main.js"
     // https://v2.quasar.dev/quasar-cli-vite/boot-files
-    boot: [
-    ],
+    boot: ['socket'],
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css
     css: [
@@ -85,6 +84,11 @@ export default configure((/* ctx */) => {
         '/api': {
           target: 'http://localhost:3333',
           changeOrigin: true
+        },
+        '/socket.io': {
+          target: 'http://localhost:3333',
+          changeOrigin: true,
+          ws: true
         }
       }
     },

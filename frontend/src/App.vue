@@ -12,7 +12,7 @@
 </template>
 
 <script setup lang="ts">
-import { socket } from 'src/services/socket'
+import socket from "src/services/socket"
 
 function testPing() {
   console.log('➡️ sending ping')
