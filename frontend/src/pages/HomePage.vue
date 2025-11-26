@@ -80,6 +80,60 @@
           />
         </section>
 
+        <section class="card invites-card" v-if="pendingInvites.length">
+          <div class="section-header row items-center justify-between">
+            <div>
+              <div class="text-subtitle2 text-weight-medium">Pozvánky</div>
+              <div class="text-caption text-grey-6">
+                Kanály sa zobrazia až po akceptovaní pozvánky.
+              </div>
+            </div>
+            <q-badge
+              color="orange-7"
+              text-color="white"
+              :label="pendingInvites.length"
+            />
+          </div>
+
+          <div class="invites-scroll q-mt-sm">
+            <q-list dense>
+              <q-item
+                v-for="invite in pendingInvites"
+                :key="invite.id"
+              >
+                <q-item-section avatar>
+                  <q-avatar size="26px" color="orange-6" text-color="white">
+                    <q-icon :name="invite.type === 'private' ? 'lock' : 'tag'" size="18px" />
+                  </q-avatar>
+                </q-item-section>
+
+                <q-item-section>
+                  <q-item-label class="text-body2 text-weight-medium">#{{ invite.name }}</q-item-label>
+                  <q-item-label caption>
+                    Musíte prijať, aby sa kanál sprístupnil.
+                  </q-item-label>
+                </q-item-section>
+
+                <q-item-section side class="row items-center q-gutter-xs">
+                  <q-btn
+                    dense
+                    color="primary"
+                    label="Prijať"
+                    @click.stop="acceptInvite(invite)"
+                  />
+                  <q-btn
+                    dense
+                    flat
+                    color="grey-7"
+                    label="Odmietnuť"
+                    @click.stop="rejectInvite(invite)"
+                  />
+                </q-item-section>
+              </q-item>
+            </q-list>
+          </div>
+        </section>
+
         <section class="card channels-card column">
           <div class="section-header row items-center justify-between">
             <div>
@@ -266,6 +320,14 @@
               color="orange-7"
               text-color="white"
               label="Pending invite"
+            />
+            <q-btn
+              v-if="selectedChannel && selectedChannel.hasInvite && !selectedChannel.isMember"
+              color="primary"
+              unelevated
+              dense
+              label="Prijať pozvánku"
+              @click="acceptInvite(selectedChannel)"
             />
           </div>
         </header>
@@ -671,6 +733,7 @@ const notificationSettings = reactive({
 const appVisibility = ref<AppVisibilityState>('visible');
 
 const channels = ref<ChannelState[]>([]);
+const invites = ref<ChannelState[]>([]);
 const selectedChannelId = ref<string | null>(null);
 const subscribedChannels = new Set<string>();
 
@@ -760,16 +823,17 @@ const filteredCommands = computed(() => {
 
 const sortedActiveChannels = computed(() =>
   channels.value
-    .filter((channel) => (channel.isMember || channel.hasInvite) && !channel.archived)
+    .filter((channel) => channel.isMember && !channel.archived)
     .sort((a, b) => {
-      if (a.hasInvite !== b.hasInvite) {
-        return a.hasInvite ? -1 : 1;
-      }
       if (a.pinned !== b.pinned) {
         return a.pinned ? -1 : 1;
       }
       return a.name.localeCompare(b.name);
     }),
+);
+
+const pendingInvites = computed(() =>
+  invites.value.slice().sort((a, b) => a.name.localeCompare(b.name)),
 );
 
 const dormantChannels = computed(() =>
@@ -883,10 +947,18 @@ const mapChannelDto = (dto: ChannelDto, existing?: ChannelState): ChannelState =
 });
 
 const handleChannelInvite = (payload: { channel: ChannelDto }) => {
-  const existing = new Map(channels.value.map((channel) => [channel.id, channel]));
-  const updated = mapChannelDto(payload.channel, existing.get(payload.channel.id));
-  existing.set(payload.channel.id, updated);
-  channels.value = Array.from(existing.values());
+  if (payload.channel.membershipStatus === 'active') {
+    const existingChannels = new Map(channels.value.map((channel) => [channel.id, channel]));
+    const updatedChannel = mapChannelDto(payload.channel, existingChannels.get(payload.channel.id));
+    existingChannels.set(payload.channel.id, updatedChannel);
+    channels.value = Array.from(existingChannels.values());
+    void ensureSubscribed(payload.channel.id);
+  } else {
+    const existingInvites = new Map(invites.value.map((channel) => [channel.id, channel]));
+    const updatedInvite = mapChannelDto(payload.channel, existingInvites.get(payload.channel.id));
+    existingInvites.set(payload.channel.id, updatedInvite);
+    invites.value = Array.from(existingInvites.values());
+  }
 
   $q.notify({
     type: 'info',
@@ -900,21 +972,23 @@ const loadChannels = async () => {
   }
 
   try {
-    const channelDtos = await fetchChannels(currentUser.id);
-    const previous = new Map(channels.value.map((channel) => [channel.id, channel]));
+    const { channels: channelDtos, invites: inviteDtos } = await fetchChannels(currentUser.id);
+    const previousChannels = new Map(channels.value.map((channel) => [channel.id, channel]));
+    const previousInvites = new Map(invites.value.map((invite) => [invite.id, invite]));
 
-    channels.value = channelDtos.map((dto) => mapChannelDto(dto, previous.get(dto.id)));
+    channels.value = channelDtos.map((dto) => mapChannelDto(dto, previousChannels.get(dto.id)));
+    invites.value = inviteDtos.map((dto) => mapChannelDto(dto, previousInvites.get(dto.id)));
 
-    for (const channel of channels.value.filter((channel) => channel.isMember)) {
+    for (const channel of channels.value) {
       void ensureSubscribed(channel.id);
     }
 
-    if (!selectedChannelId.value && channels.value.length > 0) {
-      selectedChannelId.value = channels.value.find((channel) => channel.isMember)?.id ?? channels.value[0]!.id;
-    }
+    const firstChannelId = channels.value[0]?.id ?? null;
 
     if (selectedChannelId.value && !channels.value.some((channel) => channel.id === selectedChannelId.value)) {
-      selectedChannelId.value = channels.value.find((channel) => channel.isMember)?.id ?? channels.value[0]?.id ?? null;
+      selectedChannelId.value = firstChannelId;
+    } else if (!selectedChannelId.value) {
+      selectedChannelId.value = firstChannelId;
     }
   } catch (error) {
     $q.notify({
@@ -1028,15 +1102,13 @@ const selectChannel = async (channelId: string) => {
     return;
   }
 
-  if (channel.hasInvite && !channel.isMember) {
-    await acceptInvite(channel);
+  selectedChannelId.value = channelId;
+  channel.unread = 0;
+  if (!channel.isMember) {
     return;
   }
 
-  selectedChannelId.value = channelId;
-  channel.unread = 0;
   void ensureSubscribed(channelId);
-
   await Promise.all([refreshMessages(channel), loadChannelMembers(channel), loadTypingForChannel(channel)]);
 };
 
@@ -1047,7 +1119,15 @@ const acceptInvite = async (channel: ChannelState) => {
       $q.notify({ type: result.success ? 'positive' : 'warning', message: result.feedback });
     }
     await loadChannels();
-    selectedChannelId.value = channel.id;
+    const refreshed = channels.value.find((item) => item.id === channel.id);
+    if (refreshed) {
+      selectedChannelId.value = refreshed.id;
+      await Promise.all([
+        refreshMessages(refreshed),
+        loadChannelMembers(refreshed),
+        loadTypingForChannel(refreshed),
+      ]);
+    }
   } catch (error) {
     $q.notify({ type: 'negative', message: 'Pozvánku sa nepodarilo prijať.' });
     console.error(error);
@@ -1485,6 +1565,11 @@ onBeforeUnmount(() => {
 
 .channels-card .q-item {
   align-items: flex-start;
+}
+
+.invites-scroll {
+  max-height: 240px;
+  overflow-y: auto;
 }
 
 .channels-scroll {

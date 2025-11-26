@@ -9,6 +9,11 @@ import type {
 
 import { socketRequest } from './socket';
 
+export interface ChannelCollections {
+  channels: ChannelDto[];
+  invites: ChannelDto[];
+}
+
 export interface RegisterPayload {
   firstName: string;
   lastName: string;
@@ -37,9 +42,12 @@ export const fetchUsers = async (): Promise<UserDto[]> => {
   return users;
 };
 
-export const fetchChannels = async (userId: string): Promise<ChannelDto[]> => {
-  const { channels } = await socketRequest<{ channels: ChannelDto[] }>('channels:list', { userId });
-  return channels;
+export const fetchChannels = async (userId: string): Promise<ChannelCollections> => {
+  const { channels, invites } = await socketRequest<{ channels: ChannelDto[]; invites: ChannelDto[] }>(
+    'channels:list',
+    { userId },
+  );
+  return { channels, invites: invites ?? [] };
 };
 
 export const fetchChannelMembers = async (

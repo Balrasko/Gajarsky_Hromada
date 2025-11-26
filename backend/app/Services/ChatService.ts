@@ -44,7 +44,11 @@ class ChatService {
     return channel
   }
 
-  private async ensureMembership(channelId: string, userId: string) {
+  private async ensureMembership(
+    channelId: string,
+    userId: string,
+    { allowInvited = false }: { allowInvited?: boolean } = {}
+  ) {
     const membership = await ChannelMembership.query()
       .where('channelId', channelId)
       .andWhere('userId', userId)
@@ -52,6 +56,10 @@ class ChatService {
 
     if (!membership) {
       throw new Exception('Membership not found', 404)
+    }
+
+    if (!allowInvited && membership.status !== 'active') {
+      throw new Exception('Invitation must be accepted first', 403)
     }
 
     return membership
@@ -115,29 +123,37 @@ class ChatService {
     }
   }
 
-  public async getUserChannels(userId: string): Promise<ChannelDto[]> {
-    await this.ensureUser(userId)
-    await this.pruneInactiveChannels()
-
-    const memberships = await ChannelMembership.query()
+  private async fetchMemberships(
+    userId: string,
+    statuses: ChannelMembership['status'][]
+  ): Promise<ChannelMembership[]> {
+    return ChannelMembership.query()
       .where('userId', userId)
+      .whereIn('status', statuses)
       .preload('channel', (builder: ModelQueryBuilderContract<typeof Channel>) => {
         builder
           .where('isArchived', false)
           .preload('memberships', (membershipBuilder: ModelQueryBuilderContract<typeof ChannelMembership>) => {
             membershipBuilder
-              .where('status', 'active')
+              .whereIn('status', ['active', 'invited'])
               .preload('user', (userBuilder: ModelQueryBuilderContract<typeof User>) => {
                 userBuilder.preload('preference', (prefBuilder) => prefBuilder.limit(1))
               })
           })
       })
       .orderBy('status', 'desc')
+  }
 
+  private async membershipsToChannelDtos(memberships: ChannelMembership[]): Promise<ChannelDto[]> {
     const filtered = memberships.filter((membership) => membership.channel !== null)
     const now = DateTime.utc()
 
     for (const membership of filtered) {
+      if (membership.status !== 'active') {
+        membership.unreadCount = 0
+        continue
+      }
+
       const since = membership.lastReadAt ?? membership.joinedAt ?? now.minus({ years: 1 })
 
       const unreadResult = await Database.from('messages')
@@ -173,6 +189,31 @@ class ChatService {
     })
 
     return channelDtos
+  }
+
+  public async getUserChannels(userId: string): Promise<ChannelDto[]> {
+    await this.ensureUser(userId)
+    await this.pruneInactiveChannels()
+
+    const memberships = await this.fetchMemberships(userId, ['active', 'invited'])
+    return this.membershipsToChannelDtos(memberships)
+  }
+
+  public async getUserChannelCollections(userId: string): Promise<{ channels: ChannelDto[]; invites: ChannelDto[] }> {
+    await this.ensureUser(userId)
+    await this.pruneInactiveChannels()
+
+    const [activeMemberships, invitedMemberships] = await Promise.all([
+      this.fetchMemberships(userId, ['active']),
+      this.fetchMemberships(userId, ['invited'])
+    ])
+
+    const [channels, invites] = await Promise.all([
+      this.membershipsToChannelDtos(activeMemberships),
+      this.membershipsToChannelDtos(invitedMemberships)
+    ])
+
+    return { channels, invites }
   }
 
   private async channelMembers(channel: Channel): Promise<ChannelMemberDto[]> {
@@ -307,19 +348,28 @@ class ChatService {
       .andWhere('userId', invitedUser.id)
       .first()
 
-    if (!membership) {
+    if (membership) {
+      if (membership.status === 'active') {
+        const members = await this.channelMembers(channel)
+
+        return {
+          success: false,
+          feedback: `${nickName} je už členom #${channel.name}.`,
+          channel: this.buildChannelDto(channel, requester, members)
+        }
+      }
+
+      membership.status = 'invited'
+      membership.highlightUntil = DateTime.utc().plus({ hours: 6 })
+      await membership.save()
+    } else {
       membership = await ChannelMembership.create({
         channelId: channel.id,
         userId: invitedUser.id,
         role: channel.ownerId === invitedUser.id ? 'owner' : 'member',
-        status: channel.type === 'private' ? 'invited' : 'active',
-        joinedAt: channel.type === 'private' ? undefined : DateTime.utc(),
+        status: 'invited',
         highlightUntil: DateTime.utc().plus({ hours: 6 })
       })
-    } else {
-      membership.status = channel.type === 'private' ? 'invited' : 'active'
-      membership.highlightUntil = DateTime.utc().plus({ hours: 6 })
-      await membership.save()
     }
 
     const members = await this.channelMembers(channel)
@@ -626,7 +676,7 @@ class ChatService {
         if (!contextChannelId) {
           throw new Exception('Active channel required for /cancel', 400)
         }
-        const membership = await this.ensureMembership(contextChannelId, user.id)
+        const membership = await this.ensureMembership(contextChannelId, user.id, { allowInvited: true })
         await membership.load('channel')
         return this.cancelMembership(membership)
       }

@@ -37,7 +37,7 @@ node ace generate:key
 docker run --name postgresql-container -e POSTGRES_PASSWORD=postgresadm -d -p 5432:5432 postgres
 ```
 
-## Migrate DB (Not required in Phase 1)
+## Migrate DB
 
 ```
 pnpm --filter backend exec node ace migration:run
@@ -45,7 +45,7 @@ pnpm --filter backend exec node ace migration:run
 
 # Running the project
 
-## Start backend (Not required in Phase 1)
+## Start backend
 
 ```
 pnpm --filter backend dev

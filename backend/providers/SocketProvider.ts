@@ -135,8 +135,8 @@ export default class SocketProvider {
 
     this.respond(socket, 'channels:list', async (payload) => {
       const { userId } = payload
-      const channels = await this.ChatService.getUserChannels(userId)
-      return { channels }
+      const { channels, invites } = await this.ChatService.getUserChannelCollections(userId)
+      return { channels, invites }
     })
 
     this.respond(socket, 'channels:members', async (payload) => {

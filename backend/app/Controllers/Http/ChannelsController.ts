@@ -12,9 +12,9 @@ export default class ChannelsController {
 
     const { userId } = await request.validate({ schema: querySchema })
 
-    const channels = await ChatService.getUserChannels(userId)
+    const { channels, invites } = await ChatService.getUserChannelCollections(userId)
 
-    return { channels }
+    return { channels, invites }
   }
 
   public async members({ request, params }: HttpContextContract) {
