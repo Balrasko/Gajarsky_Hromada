@@ -34,9 +34,17 @@ export default class SocketProvider {
         reply({ ok: true, data })
       } catch (error) {
         const status = typeof (error as any)?.status === 'number' ? (error as any).status : undefined
-        const validationErrors = (error as any)?.messages?.errors as { message?: string }[] | undefined
+        const validationErrors =
+          ((error as any)?.messages?.errors as { message?: string }[] | undefined) ??
+          (Array.isArray((error as any)?.messages) ? ((error as any)?.messages as { message?: string }[]) : undefined)
+
         const message =
-          validationErrors?.[0]?.message ||
+          (validationErrors && validationErrors.length
+            ? validationErrors
+                .map((item) => item?.message)
+                .filter(Boolean)
+                .join('; ')
+            : undefined) ||
           (error as Error)?.message ||
           'Unexpected error'
         console.error(`[socket:${event}]`, error)
