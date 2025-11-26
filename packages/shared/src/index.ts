@@ -44,6 +44,10 @@ export interface CommandResultDto {
   feedback: string;
   channel?: ChannelDto;
   members?: ChannelMemberDto[];
+  invite?: {
+    userId: string;
+    channel: ChannelDto;
+  };
 }
 
 export interface TypingStateDto {

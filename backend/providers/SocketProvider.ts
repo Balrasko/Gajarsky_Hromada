@@ -21,6 +21,10 @@ export default class SocketProvider {
   private User!: typeof UserModel
   private ChannelMembership!: typeof ChannelMembershipModel
 
+  private userRoom(userId: string) {
+    return `user:${userId}`
+  }
+
   private respond<T>(
     socket: Socket,
     event: string,
@@ -119,6 +123,8 @@ export default class SocketProvider {
 
       socket.data.userId = user.id
 
+      socket.join(this.userRoom(user.id))
+
       return { user: user.toDto() }
     })
 
@@ -152,7 +158,9 @@ export default class SocketProvider {
     this.respond(socket, 'channels:typing:update', async (payload) => {
       const { channelId, userId, content } = payload
       await this.ChatService.updateTypingState(userId, channelId, content ?? '')
-      return { updatedAt: DateTime.utc().toISO() }
+      const typing = await this.ChatService.getTypingStates(userId, channelId)
+      io.to(channelId).emit('channels:typing', { channelId, typing })
+      return { updatedAt: DateTime.utc().toISO(), typing }
     })
 
     this.respond(socket, 'channels:typing:list', async (payload) => {
@@ -178,6 +186,17 @@ export default class SocketProvider {
     this.respond(socket, 'commands:execute', async (payload) => {
       const { userId, command, channelId } = payload
       const result = await this.ChatService.handleCommand(userId, command, channelId ?? undefined)
+
+      if (result.invite) {
+        io.to(this.userRoom(result.invite.userId)).emit('channels:invite', {
+          channel: result.invite.channel
+        })
+      }
+
+      if (result.channel && result.channel.membershipStatus === 'active') {
+        socket.join(result.channel.id)
+      }
+
       return { result }
     })
 
@@ -200,6 +219,7 @@ export default class SocketProvider {
       }
 
       socket.data.userId = authenticatedUserId
+      socket.join(this.userRoom(authenticatedUserId))
       socket.join(channelId)
       return { joined: true }
     })

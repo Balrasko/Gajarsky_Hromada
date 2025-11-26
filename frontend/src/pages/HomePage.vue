@@ -882,6 +882,18 @@ const mapChannelDto = (dto: ChannelDto, existing?: ChannelState): ChannelState =
   loadingMessages: false,
 });
 
+const handleChannelInvite = (payload: { channel: ChannelDto }) => {
+  const existing = new Map(channels.value.map((channel) => [channel.id, channel]));
+  const updated = mapChannelDto(payload.channel, existing.get(payload.channel.id));
+  existing.set(payload.channel.id, updated);
+  channels.value = Array.from(existing.values());
+
+  $q.notify({
+    type: 'info',
+    message: `Dostal si pozvánku do #${payload.channel.name}.`,
+  });
+};
+
 const loadChannels = async () => {
   if (!currentUser.id) {
     return;
@@ -938,6 +950,16 @@ const loadTypingForChannel = async (channel: ChannelState) => {
   } catch (error) {
     console.error(error);
   }
+};
+
+const applyTypingState = (channelId: string, typing: TypingStateDto[]) => {
+  const channel = channels.value.find((item) => item.id === channelId);
+  if (!channel) {
+    return;
+  }
+
+  channel.typingPreviews = typing;
+  channel.typingMembers = typing.map((item) => item.nickName);
 };
 
 const refreshMessages = async (channel: ChannelState) => {
@@ -1270,6 +1292,10 @@ const ensureSubscribed = async (channelId: string) => {
   }
 };
 
+const handleTypingBroadcast = (payload: { channelId: string; typing: TypingStateDto[] }) => {
+  applyTypingState(payload.channelId, payload.typing);
+};
+
 const handleIncomingMessage = (payload: { message: MessageDto }) => {
   const message = payload.message;
   const channel = channels.value.find((item) => item.id === message.channelId);
@@ -1289,6 +1315,8 @@ const handleIncomingMessage = (payload: { message: MessageDto }) => {
 
 onMounted(async () => {
   socket.on('channels:message:new', handleIncomingMessage);
+  socket.on('channels:typing', handleTypingBroadcast);
+  socket.on('channels:invite', handleChannelInvite);
 
   await loadChannels();
   if (selectedChannel.value) {
@@ -1379,6 +1407,8 @@ onBeforeUnmount(() => {
   }
 
   socket.off('channels:message:new', handleIncomingMessage);
+  socket.off('channels:typing', handleTypingBroadcast);
+  socket.off('channels:invite', handleChannelInvite);
 
   if (typingUpdateTimer !== null) {
     window.clearTimeout(typingUpdateTimer);

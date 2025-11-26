@@ -332,7 +332,11 @@ class ChatService {
     return {
       success: true,
       feedback,
-      channel: this.buildChannelDto(channel, requester, members)
+      channel: this.buildChannelDto(channel, requester, members),
+      invite: {
+        userId: invitedUser.id,
+        channel: this.buildChannelDto(channel, membership, members)
+      }
     }
   }
 
