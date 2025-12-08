@@ -661,7 +661,7 @@ import {
   sendChannelMessage,
   updateTypingState,
 } from 'src/services/api';
-import { clearCurrentUser, loadCurrentUser } from 'src/services/session';
+import { clearCurrentUser, loadCurrentUser, saveCurrentUser } from 'src/services/session';
 
 type ChannelType = 'public' | 'private';
 type AppVisibilityState = 'visible' | 'hidden';
@@ -732,10 +732,20 @@ const notificationSettings = reactive({
 
 const appVisibility = ref<AppVisibilityState>('visible');
 
+const guardOffline = (message: string) => {
+  if (currentUser.status === 'offline') {
+    $q.notify({ type: 'info', message });
+    return true;
+  }
+
+  return false;
+};
+
 const channels = ref<ChannelState[]>([]);
 const invites = ref<ChannelState[]>([]);
 const selectedChannelId = ref<string | null>(null);
 const subscribedChannels = new Set<string>();
+const notifiedMessages = new Set<string>();
 
 const consoleInput = ref('');
 const consoleInputRef = ref<{ focus: () => void } | null>(null);
@@ -918,11 +928,86 @@ const computeLastActiveDays = (lastActivityAt: string | null) => {
 };
 
 const mergeMessages = (channel: ChannelState, incoming: MessageDto[]) => {
+  const existingIds = new Set(channel.messages.map((message) => message.id));
+  const newMessages: MessageDto[] = [];
   const byId = new Map(channel.messages.map((message) => [message.id, message]));
-  incoming.forEach((message) => byId.set(message.id, message));
+
+  incoming.forEach((message) => {
+    if (!existingIds.has(message.id)) {
+      newMessages.push(message);
+    }
+    byId.set(message.id, message);
+  });
+
   channel.messages = Array.from(byId.values()).sort(
     (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
   );
+
+  return newMessages;
+};
+
+const shouldNotifyMessage = (channel: ChannelState, message: MessageDto) => {
+  if (!notificationSettings.enabled) {
+    return false;
+  }
+
+  if (currentUser.status !== 'online') {
+    return false;
+  }
+
+  if ((message as ChatMessage).system) {
+    return false;
+  }
+
+  if (message.senderId === currentUser.id || message.sender === currentUser.nickName) {
+    return false;
+  }
+
+  if (notificationSettings.mentionsOnly && message.addressedTo !== currentUser.nickName) {
+    return false;
+  }
+
+  if (notificationSettings.bannersWhenHidden && appVisibility.value === 'visible') {
+    return false;
+  }
+
+  if (selectedChannelId.value === channel.id && appVisibility.value === 'visible') {
+    return false;
+  }
+
+  return true;
+};
+
+const notifyAboutMessages = (channel: ChannelState, messages: MessageDto[]) => {
+  messages.forEach((message) => {
+    if (notifiedMessages.has(message.id)) {
+      return;
+    }
+
+    if (!shouldNotifyMessage(channel, message)) {
+      return;
+    }
+
+    notifiedMessages.add(message.id);
+    const preview = message.content.length > 140 ? `${message.content.slice(0, 137)}...` : message.content;
+
+    $q.notify({
+      type: 'info',
+      color: 'primary',
+      message: `#${channel.name} • @${message.sender}`,
+      caption: preview,
+      timeout: 6000,
+      actions: [
+        {
+          label: 'Otvoriť',
+          color: 'white',
+          handler: () => {
+            void selectChannel(channel.id);
+          },
+        },
+      ],
+    });
+  });
 };
 
 const mapChannelDto = (dto: ChannelDto, existing?: ChannelState): ChannelState => ({
@@ -967,11 +1052,12 @@ const handleChannelInvite = (payload: { channel: ChannelDto }) => {
 };
 
 const loadChannels = async () => {
-  if (!currentUser.id) {
+  if (!currentUser.id || currentUser.status === 'offline') {
     return;
   }
 
   try {
+    await waitForSocketConnection();
     const { channels: channelDtos, invites: inviteDtos } = await fetchChannels(currentUser.id);
     const previousChannels = new Map(channels.value.map((channel) => [channel.id, channel]));
     const previousInvites = new Map(invites.value.map((invite) => [invite.id, invite]));
@@ -1000,11 +1086,12 @@ const loadChannels = async () => {
 };
 
 const loadChannelMembers = async (channel: ChannelState) => {
-  if (!currentUser.id) {
+  if (!currentUser.id || currentUser.status === 'offline') {
     return;
   }
 
   try {
+    await waitForSocketConnection();
     const { members } = await fetchChannelMembers(channel.id, currentUser.id);
     channel.members = members;
   } catch (error) {
@@ -1013,11 +1100,12 @@ const loadChannelMembers = async (channel: ChannelState) => {
 };
 
 const loadTypingForChannel = async (channel: ChannelState) => {
-  if (!currentUser.id) {
+  if (!currentUser.id || currentUser.status === 'offline') {
     return;
   }
 
   try {
+    await waitForSocketConnection();
     const typing = await fetchTypingStates(channel.id, currentUser.id);
     channel.typingPreviews = typing;
     channel.typingMembers = typing.map((item) => item.nickName);
@@ -1037,16 +1125,21 @@ const applyTypingState = (channelId: string, typing: TypingStateDto[]) => {
 };
 
 const refreshMessages = async (channel: ChannelState) => {
-  if (!currentUser.id) {
+  if (!currentUser.id || currentUser.status === 'offline') {
     return;
   }
 
   try {
+    await waitForSocketConnection();
     const { messages, nextCursor } = await fetchChannelMessages(channel.id, currentUser.id);
-    mergeMessages(channel, messages);
+    const newMessages = mergeMessages(channel, messages);
     channel.nextCursor = nextCursor;
     channel.messagesLoaded = true;
     channel.unread = 0;
+    if (newMessages.length) {
+      channel.lastActiveDays = 0;
+      notifyAboutMessages(channel, newMessages);
+    }
   } catch (error) {
     $q.notify({
       type: 'negative',
@@ -1057,12 +1150,13 @@ const refreshMessages = async (channel: ChannelState) => {
 };
 
 const loadOlderMessages = async (channel: ChannelState) => {
-  if (!channel.nextCursor || channel.loadingMessages || !currentUser.id) {
+  if (!channel.nextCursor || channel.loadingMessages || !currentUser.id || currentUser.status === 'offline') {
     return false;
   }
 
   channel.loadingMessages = true;
   try {
+    await waitForSocketConnection();
     const { messages, nextCursor } = await fetchChannelMessages(
       channel.id,
       currentUser.id,
@@ -1104,7 +1198,7 @@ const selectChannel = async (channelId: string) => {
 
   selectedChannelId.value = channelId;
   channel.unread = 0;
-  if (!channel.isMember) {
+  if (!channel.isMember || currentUser.status === 'offline') {
     return;
   }
 
@@ -1113,7 +1207,12 @@ const selectChannel = async (channelId: string) => {
 };
 
 const acceptInvite = async (channel: ChannelState) => {
+  if (guardOffline('Ste offline, prijmite pozvánku až po návrate online.')) {
+    return;
+  }
+
   try {
+    await waitForSocketConnection();
     const result = await executeCommand(currentUser.id, `/join ${channel.name}`);
     if (result.feedback) {
       $q.notify({ type: result.success ? 'positive' : 'warning', message: result.feedback });
@@ -1135,7 +1234,12 @@ const acceptInvite = async (channel: ChannelState) => {
 };
 
 const rejectInvite = async (channel: ChannelState) => {
+  if (guardOffline('Ste offline, pozvánku môžete odmietnuť po návrate online.')) {
+    return;
+  }
+
   try {
+    await waitForSocketConnection();
     await executeCommand(currentUser.id, '/cancel', channel.id);
     $q.notify({ type: 'info', message: `Pozvánka do #${channel.name} bola odmietnutá.` });
     await loadChannels();
@@ -1146,7 +1250,12 @@ const rejectInvite = async (channel: ChannelState) => {
 };
 
 const leaveChannel = async (channel: ChannelState) => {
+  if (guardOffline('Ste offline. Opustiť kanál je možné až po návrate online.')) {
+    return;
+  }
+
   try {
+    await waitForSocketConnection();
     await leaveChannelRequest(channel.id, currentUser.id);
     $q.notify({ type: 'info', message: `Opustili ste kanál #${channel.name}.` });
     await loadChannels();
@@ -1160,7 +1269,12 @@ const leaveChannel = async (channel: ChannelState) => {
 };
 
 const closeChannel = async (channel: ChannelState) => {
+  if (guardOffline('Ste offline. Sprístupnite sa online, aby ste mohli zrušiť kanál.')) {
+    return;
+  }
+
   try {
+    await waitForSocketConnection();
     await executeCommand(currentUser.id, '/quit', channel.id);
     $q.notify({ type: 'warning', message: `Kanál #${channel.name} bol zrušený.` });
     await loadChannels();
@@ -1199,6 +1313,7 @@ const sendMessage = async (content: string) => {
   }
 
   try {
+    await waitForSocketConnection();
     const message = await sendChannelMessage(channel.id, currentUser.id, trimmed);
     mergeMessages(channel, [message]);
     channel.lastActiveDays = 0;
@@ -1225,7 +1340,13 @@ const handleConsoleSubmit = async () => {
 };
 
 const handleCommand = async (input: string) => {
+  if (currentUser.status === 'offline' && !input.startsWith('/status')) {
+    $q.notify({ type: 'info', message: 'Ste offline. Prepnite stav, aby ste mohli vykonať príkazy.' });
+    return;
+  }
+
   try {
+    await waitForSocketConnection();
     const result = await executeCommand(currentUser.id, input, selectedChannelId.value ?? undefined);
     if (result.feedback) {
       $q.notify({ type: result.success ? 'positive' : 'warning', message: result.feedback });
@@ -1278,6 +1399,10 @@ const openCreateChannelDialog = () => {
 };
 
 const confirmChannelCreation = async () => {
+  if (guardOffline('Ste offline. Kanál vytvoríte až po návrate online.')) {
+    return;
+  }
+
   const { name, type, description } = createChannelDialog.form;
   const sanitized = sanitizeChannelName(name);
 
@@ -1290,6 +1415,7 @@ const confirmChannelCreation = async () => {
   }
 
   try {
+    await waitForSocketConnection();
     const result = await executeCommand(
       currentUser.id,
       `/join ${sanitized}${type === 'private' ? ' private' : ''}`,
@@ -1312,6 +1438,10 @@ const confirmChannelCreation = async () => {
 };
 
 const reclaimChannel = async (channelName: string) => {
+  if (guardOffline('Ste offline. Kanál môžete obnoviť po návrate online.')) {
+    return;
+  }
+
   const sanitized = sanitizeChannelName(channelName);
   if (!sanitized) {
     $q.notify({
@@ -1322,6 +1452,7 @@ const reclaimChannel = async (channelName: string) => {
   }
 
   try {
+    await waitForSocketConnection();
     await executeCommand(currentUser.id, `/join ${sanitized}`);
     await loadChannels();
     const channel = channels.value.find((item) => item.name === sanitized);
@@ -1337,9 +1468,11 @@ const reclaimChannel = async (channelName: string) => {
 };
 
 const logout = () => {
+  stopRealtime();
   clearCurrentUser();
   Object.assign(currentUser, emptyUser);
   subscribedChannels.clear();
+  notifiedMessages.clear();
 
   $q.notify({
     type: 'info',
@@ -1351,6 +1484,39 @@ const logout = () => {
   });
 };
 
+const waitForSocketConnection = () =>
+  new Promise<void>((resolve, reject) => {
+    if (socket.connected) {
+      resolve();
+      return;
+    }
+
+    socket.connect();
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('Socket connect timeout'));
+    }, 5000);
+
+    const onConnect = () => {
+      cleanup();
+      resolve();
+    };
+
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      socket.off('connect', onConnect);
+      socket.off('connect_error', onError);
+    };
+
+    socket.once('connect', onConnect);
+    socket.once('connect_error', onError);
+  });
+
 let messagePollInterval: number | null = null;
 let channelPollInterval: number | null = null;
 let typingUpdateTimer: number | null = null;
@@ -1360,11 +1526,12 @@ const ensureSubscribed = async (channelId: string) => {
     return;
   }
 
-  if (!currentUser.id) {
+  if (!currentUser.id || currentUser.status === 'offline') {
     return;
   }
 
   try {
+    await waitForSocketConnection();
     await socketRequest('channels:subscribe', { channelId, userId: currentUser.id });
     subscribedChannels.add(channelId);
   } catch (error) {
@@ -1372,18 +1539,86 @@ const ensureSubscribed = async (channelId: string) => {
   }
 };
 
+const stopPolling = () => {
+  if (messagePollInterval !== null) {
+    window.clearInterval(messagePollInterval);
+    messagePollInterval = null;
+  }
+
+  if (channelPollInterval !== null) {
+    window.clearInterval(channelPollInterval);
+    channelPollInterval = null;
+  }
+};
+
+const startPolling = () => {
+  if (currentUser.status === 'offline') {
+    return;
+  }
+
+  if (messagePollInterval === null) {
+    messagePollInterval = window.setInterval(() => {
+      if (currentUser.status === 'offline') {
+        return;
+      }
+
+      const channel = selectedChannel.value;
+      if (channel) {
+        void refreshMessages(channel);
+        void loadTypingForChannel(channel);
+      }
+    }, 4000);
+  }
+
+  if (channelPollInterval === null) {
+    channelPollInterval = window.setInterval(() => {
+      if (currentUser.status !== 'offline') {
+        void loadChannels();
+      }
+    }, 7000);
+  }
+};
+
+const stopRealtime = () => {
+  stopPolling();
+  subscribedChannels.clear();
+  if (socket.connected) {
+    socket.disconnect();
+  }
+};
+
+const resumeRealtime = async () => {
+  if (currentUser.status === 'offline') {
+    return;
+  }
+
+  try {
+    await waitForSocketConnection();
+    for (const channel of channels.value) {
+      await ensureSubscribed(channel.id);
+    }
+    startPolling();
+  } catch (error) {
+    console.error('Unable to resume realtime updates', error);
+  }
+};
+
 const handleTypingBroadcast = (payload: { channelId: string; typing: TypingStateDto[] }) => {
+  if (currentUser.status === 'offline') {
+    return;
+  }
+
   applyTypingState(payload.channelId, payload.typing);
 };
 
 const handleIncomingMessage = (payload: { message: MessageDto }) => {
   const message = payload.message;
   const channel = channels.value.find((item) => item.id === message.channelId);
-  if (!channel) {
+  if (!channel || currentUser.status === 'offline') {
     return;
   }
 
-  mergeMessages(channel, [message]);
+  const newMessages = mergeMessages(channel, [message]);
   channel.lastActiveDays = 0;
 
   if (selectedChannelId.value !== channel.id) {
@@ -1391,6 +1626,8 @@ const handleIncomingMessage = (payload: { message: MessageDto }) => {
   } else {
     channel.unread = 0;
   }
+
+  notifyAboutMessages(channel, newMessages);
 };
 
 onMounted(async () => {
@@ -1398,8 +1635,14 @@ onMounted(async () => {
   socket.on('channels:typing', handleTypingBroadcast);
   socket.on('channels:invite', handleChannelInvite);
 
+  try {
+    await waitForSocketConnection();
+  } catch (error) {
+    console.error('Socket nedostupný', error);
+  }
+
   await loadChannels();
-  if (selectedChannel.value) {
+  if (selectedChannel.value && currentUser.status !== 'offline') {
     await Promise.all([
       refreshMessages(selectedChannel.value),
       loadChannelMembers(selectedChannel.value),
@@ -1407,17 +1650,7 @@ onMounted(async () => {
     ]);
   }
 
-  messagePollInterval = window.setInterval(() => {
-    const channel = selectedChannel.value;
-    if (channel) {
-      void refreshMessages(channel);
-      void loadTypingForChannel(channel);
-    }
-  }, 4000);
-
-  channelPollInterval = window.setInterval(() => {
-    void loadChannels();
-  }, 7000);
+  startPolling();
 });
 
 watch(() => consoleInput.value, (value) => {
@@ -1432,7 +1665,7 @@ watch(() => consoleInput.value, (value) => {
     return;
   }
 
-  if (!currentUser.id) {
+  if (!currentUser.id || currentUser.status === 'offline') {
     return;
   }
 
@@ -1455,6 +1688,9 @@ watch(
 
     const channel = channels.value.find((item) => item.id === newId);
     if (channel) {
+      if (currentUser.status === 'offline') {
+        return;
+      }
       await Promise.all([refreshMessages(channel), loadChannelMembers(channel), loadTypingForChannel(channel)]);
     }
   },
@@ -1468,23 +1704,48 @@ watch(
     }
 
     try {
+      if (newStatus === 'offline') {
+        stopPolling();
+        if (typingUpdateTimer !== null) {
+          window.clearTimeout(typingUpdateTimer);
+          typingUpdateTimer = null;
+        }
+      }
+
+      await waitForSocketConnection();
       await executeCommand(currentUser.id, `/status ${newStatus}`);
+      saveCurrentUser({ ...currentUser });
+
+      if (newStatus === 'offline') {
+        stopRealtime();
+        return;
+      }
+
+      await resumeRealtime();
+      await loadChannels();
+
+      if (selectedChannel.value) {
+        await Promise.all([
+          refreshMessages(selectedChannel.value),
+          loadChannelMembers(selectedChannel.value),
+          loadTypingForChannel(selectedChannel.value),
+        ]);
+      }
     } catch (error) {
+      if (oldStatus) {
+        currentUser.status = oldStatus;
+      }
+      $q.notify({ type: 'negative', message: 'Zmenu statusu sa nepodarilo uložiť.' });
+      if (oldStatus === 'offline') {
+        stopRealtime();
+      }
       console.error(error);
     }
   },
 );
 
 onBeforeUnmount(() => {
-  if (messagePollInterval !== null) {
-    clearInterval(messagePollInterval);
-    messagePollInterval = null;
-  }
-
-  if (channelPollInterval !== null) {
-    clearInterval(channelPollInterval);
-    channelPollInterval = null;
-  }
+  stopPolling();
 
   socket.off('channels:message:new', handleIncomingMessage);
   socket.off('channels:typing', handleTypingBroadcast);
