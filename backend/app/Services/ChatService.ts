@@ -719,8 +719,8 @@ class ChatService {
       return null
     }
 
-    const nickname = mentionMatch[1]
-    return members.find((member) => member.nickName === nickname) ?? null
+    const nickname = mentionMatch[1].toLowerCase()
+    return members.find((member) => member.nickName.toLowerCase() === nickname) ?? null
   }
 
   private async ensureNotBanned(channelId: string, userId: string) {
@@ -735,7 +735,9 @@ class ChatService {
   }
 
   public async sendMessage(userId: string, channelId: string, content: string): Promise<MessageDto> {
-    if (!content.trim()) {
+    const trimmedContent = content.trim()
+
+    if (!trimmedContent) {
       throw new Exception('Empty messages are not allowed', 422)
     }
 
@@ -756,12 +758,21 @@ class ChatService {
     })
 
     const members = this.mapMembers(channel.memberships)
-    const addressedMember = this.extractAddressedUser(content, members)
+    const addressedMember = this.extractAddressedUser(trimmedContent, members)
+
+    let body = trimmedContent
+    if (addressedMember) {
+      const mentionPattern = new RegExp(`(^|\\s)@${addressedMember.nickName}(?![a-zA-Z0-9._-])`, 'i')
+      const withoutMention = trimmedContent.replace(mentionPattern, ' ').trim()
+      if (withoutMention.length > 0) {
+        body = withoutMention
+      }
+    }
 
     const message = await Message.create({
       channelId,
       senderId: userId,
-      content,
+      content: body,
       addressedTo: addressedMember?.id ?? null
     })
 
