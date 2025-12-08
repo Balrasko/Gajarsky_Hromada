@@ -1,7 +1,7 @@
 <template>
   <q-page class="home-page q-pa-none">
     <div class="workspace-grid">
-      <aside class="workspace-column sidebar">
+      <aside class="workspace-column sidebar" v-if="!$q.screen.lt.md">
         <section class="card user-card">
           <div class="user-card__header row items-center q-gutter-sm">
             <q-avatar size="42px" color="primary" text-color="white">
@@ -329,6 +329,24 @@
               label="Prijať pozvánku"
               @click="acceptInvite(selectedChannel)"
             />
+            <q-btn
+              v-if="$q.screen.lt.md"
+              dense
+              flat
+              color="primary"
+              icon="menu"
+              label="Menu"
+              @click="sidebarDrawer = true"
+            />
+            <q-btn
+              v-if="selectedChannel && $q.screen.lt.lg"
+              dense
+              flat
+              color="secondary"
+              icon="groups"
+              label="Členovia"
+              @click="inspectorDrawer = true"
+            />
           </div>
         </header>
 
@@ -506,7 +524,7 @@
         </footer>
       </section>
 
-      <aside class="workspace-column inspector" v-if="selectedChannel">
+      <aside class="workspace-column inspector" v-if="selectedChannel && !$q.screen.lt.lg">
         <section class="card inspector-card">
           <div class="section-header q-mb-sm">
             <div class="text-subtitle2 text-weight-medium">
@@ -598,6 +616,414 @@
         </section>
       </aside>
     </div>
+
+    <!-- Mobile left menu -->
+    <q-drawer
+      v-model="sidebarDrawer"
+      side="left"
+      overlay
+      behavior="mobile"
+      :width="360"
+      class="sidebar-drawer"
+    >
+      <div class="sidebar drawer-content q-pa-sm">
+        <section class="card user-card">
+          <div class="user-card__header row items-center q-gutter-sm">
+            <q-avatar size="42px" color="primary" text-color="white">
+              {{ currentUserInitials }}
+            </q-avatar>
+            <div class="column">
+              <div class="text-subtitle1 text-weight-medium">
+                {{ currentUser.firstName }} {{ currentUser.lastName }}
+              </div>
+              <div class="text-caption text-grey-6">@{{ currentUser.nickName }}</div>
+              <div class="text-caption text-grey-7">{{ currentUser.email }}</div>
+            </div>
+          </div>
+
+          <q-separator class="q-my-sm" />
+
+          <div class="user-card__status column q-gutter-xs">
+            <div class="label text-caption text-grey-7">Stav používateľa</div>
+            <q-btn-toggle
+              v-model="currentUser.status"
+              class="status-toggle"
+              toggle-color="primary"
+              unelevated
+              :options="statusOptions"
+            />
+          </div>
+
+          <q-separator class="q-my-sm" />
+
+          <div class="user-card__notifications column q-gutter-sm">
+            <div class="label text-caption text-grey-7">Notifikácie</div>
+            <q-toggle
+              v-model="notificationSettings.enabled"
+              label="Zapnúť notifikácie"
+              dense
+            />
+            <q-toggle
+              v-model="notificationSettings.mentionsOnly"
+              :disable="!notificationSettings.enabled"
+              label="Iba @zmienky"
+              dense
+            />
+            <q-toggle
+              v-model="notificationSettings.bannersWhenHidden"
+              label="Len keď aplikácia nie je viditeľná"
+              dense
+            />
+
+            <div class="label text-caption text-grey-7 q-mt-sm">Viditeľnosť aplikácie</div>
+            <q-btn-toggle
+              v-model="appVisibility"
+              class="visibility-toggle"
+              unelevated
+              toggle-color="secondary"
+              :options="[
+                { label: 'Visible', value: 'visible' },
+                { label: 'Hidden', value: 'hidden' }
+              ]"
+            />
+            <q-banner
+              v-if="appVisibility === 'visible'"
+              dense
+              class="bg-grey-2 text-grey-8 q-mt-sm border-curve"
+            >
+              Notifikácie sa odošlú až keď zmeníte stav na Hidden.
+            </q-banner>
+          </div>
+          <q-separator class="q-my-sm" />
+
+          <q-btn
+            color="negative"
+            icon="logout"
+            label="Odhlásiť sa"
+            unelevated
+            @click="logout"
+          />
+        </section>
+
+        <section class="card invites-card" v-if="pendingInvites.length">
+          <div class="section-header row items-center justify-between">
+            <div>
+              <div class="text-subtitle2 text-weight-medium">Pozvánky</div>
+              <div class="text-caption text-grey-6">
+                Kanály sa zobrazia až po akceptovaní pozvánky.
+              </div>
+            </div>
+            <q-badge
+              color="orange-7"
+              text-color="white"
+              :label="pendingInvites.length"
+            />
+          </div>
+
+          <div class="invites-scroll q-mt-sm">
+            <q-list dense>
+              <q-item
+                v-for="invite in pendingInvites"
+                :key="invite.id"
+              >
+                <q-item-section avatar>
+                  <q-avatar size="26px" color="orange-6" text-color="white">
+                    <q-icon :name="invite.type === 'private' ? 'lock' : 'tag'" size="18px" />
+                  </q-avatar>
+                </q-item-section>
+
+                <q-item-section>
+                  <q-item-label class="text-body2 text-weight-medium">#{{ invite.name }}</q-item-label>
+                  <q-item-label caption>
+                    Musíte prijať, aby sa kanál sprístupnil.
+                  </q-item-label>
+                </q-item-section>
+
+                <q-item-section side class="row items-center q-gutter-xs">
+                  <q-btn
+                    dense
+                    color="primary"
+                    label="Prijať"
+                    @click.stop="() => { acceptInvite(invite); sidebarDrawer = false; }"
+                  />
+                  <q-btn
+                    dense
+                    flat
+                    color="grey-7"
+                    label="Odmietnuť"
+                    @click.stop="() => { rejectInvite(invite); sidebarDrawer = false; }"
+                  />
+                </q-item-section>
+              </q-item>
+            </q-list>
+          </div>
+        </section>
+
+        <section class="card channels-card column">
+          <div class="section-header row items-center justify-between">
+            <div>
+              <div class="text-subtitle2 text-weight-medium">Kanály</div>
+              <div class="text-caption text-grey-6">
+                Vytvárajte, prijímajte pozvánky alebo opúšťajte miestnosti.
+              </div>
+            </div>
+            <q-btn
+              icon="add"
+              color="primary"
+              round
+              flat
+              @click="openCreateChannelDialog"
+            />
+          </div>
+
+          <div
+            class="channels-scroll q-mt-sm"
+            :class="{ 'channels-scroll--empty': sortedActiveChannels.length === 0 }"
+          >
+            <q-list v-if="sortedActiveChannels.length" dense>
+              <q-item
+                v-for="channel in sortedActiveChannels"
+                :key="channel.id"
+                clickable
+                :class="channelItemClasses(channel)"
+                @click="() => { sidebarDrawer = false; selectChannel(channel.id); }"
+              >
+                <q-item-section avatar>
+                  <q-avatar size="26px" :color="channel.type === 'private' ? 'primary' : 'secondary'">
+                    <q-icon :name="channel.type === 'private' ? 'lock' : 'tag'" color="white" size="18px" />
+                  </q-avatar>
+                </q-item-section>
+
+                <q-item-section class="channel-item__main">
+                  <q-item-label class="text-body2 text-weight-medium channel-item__title">
+                    <span class="channel-item__name">#{{ channel.name }}</span>
+                    <q-badge
+                      v-if="channel.hasInvite && !channel.isMember"
+                      color="orange-7"
+                      text-color="white"
+                      label="Invite"
+                      class="channel-item__badge"
+                    />
+                    <q-badge
+                      v-if="channel.ownerId === currentUser.id"
+                      color="purple-7"
+                      text-color="white"
+                      label="Admin"
+                      class="channel-item__badge"
+                    />
+                  </q-item-label>
+                  <q-item-label caption class="channel-item__description">
+                    {{ channel.description }}
+                  </q-item-label>
+                </q-item-section>
+
+                <q-item-section side class="row items-center q-gutter-xs">
+                  <q-badge
+                    v-if="channel.unread > 0"
+                    color="red-6"
+                    text-color="white"
+                    :label="channel.unread"
+                  />
+
+                  <q-icon
+                    v-if="channel.lastActiveDays > 30"
+                    name="hourglass_empty"
+                    size="18px"
+                    color="warning"
+                  >
+                    <q-tooltip>Kanál je neaktívny &gt; 30 dní - bude archivovaný</q-tooltip>
+                  </q-icon>
+
+                  <q-btn
+                    dense
+                    flat
+                    round
+                    color="grey-7"
+                    icon="more_vert"
+                  >
+                    <q-menu cover>
+                      <q-list dense style="min-width: 180px">
+                        <q-item
+                          v-if="channel.hasInvite && !channel.isMember"
+                          clickable
+                          @click.stop="() => { acceptInvite(channel); sidebarDrawer = false; }"
+                        >
+                          <q-item-section>Aceptovať pozvánku</q-item-section>
+                        </q-item>
+                        <q-item
+                          v-if="channel.hasInvite && !channel.isMember"
+                          clickable
+                          @click.stop="() => { rejectInvite(channel); sidebarDrawer = false; }"
+                        >
+                          <q-item-section>Odmietnuť pozvánku</q-item-section>
+                        </q-item>
+                        <q-item
+                          v-if="channel.isMember"
+                          clickable
+                          @click.stop="() => { leaveChannel(channel); sidebarDrawer = false; }"
+                        >
+                          <q-item-section>Opustiť kanál (/cancel)</q-item-section>
+                        </q-item>
+                        <q-item
+                          v-if="channel.ownerId === currentUser.id"
+                          clickable
+                          @click.stop="() => { closeChannel(channel); sidebarDrawer = false; }"
+                        >
+                          <q-item-section>Zrušiť kanál (/quit)</q-item-section>
+                        </q-item>
+                        <q-item clickable @click.stop="() => { selectChannel(channel.id); sidebarDrawer = false; }">
+                          <q-item-section>Zobraziť detaily</q-item-section>
+                        </q-item>
+                      </q-list>
+                    </q-menu>
+                  </q-btn>
+                </q-item-section>
+              </q-item>
+            </q-list>
+
+            <div
+              v-else
+              class="empty-placeholder column items-center text-caption text-grey-6 q-py-xl"
+            >
+              <q-icon name="chat_bubble_outline" size="32px" class="q-mb-sm" />
+              Žiadne kanály. Vytvorte nový cez tlačidlo alebo príkaz /join.
+            </div>
+          </div>
+        </section>
+
+        <section class="card dormant-card" v-if="dormantChannels.length">
+          <div class="section-header q-mb-sm">
+            <div class="text-subtitle2 text-weight-medium">Neaktívne kanály</div>
+            <div class="text-caption text-grey-6">
+              Tieto kanály expirovali po 30 dňoch. Môžete znovu použiť ich názvy.
+            </div>
+          </div>
+
+          <q-list dense>
+            <q-item v-for="channel in dormantChannels" :key="channel.id">
+              <q-item-section>
+                <q-item-label class="text-body2 text-weight-medium">#{{ channel.name }}</q-item-label>
+                <q-item-label caption>
+                  Posledná aktivita pred {{ channel.lastActiveDays }} dňami.
+                </q-item-label>
+              </q-item-section>
+              <q-item-section side>
+                <q-btn
+                  dense
+                  color="primary"
+                  label="Reclaim"
+                  outline
+                  @click="() => { reclaimChannel(channel.name); sidebarDrawer = false; }"
+                />
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </section>
+      </div>
+    </q-drawer>
+
+    <!-- Mobile inspector -->
+    <q-drawer
+      v-if="selectedChannel"
+      v-model="inspectorDrawer"
+      side="right"
+      overlay
+      behavior="mobile"
+      :width="320"
+      class="inspector-drawer"
+    >
+      <div class="inspector drawer-content q-pa-sm">
+        <section class="card inspector-card">
+          <div class="section-header q-mb-sm">
+            <div class="text-subtitle2 text-weight-medium">
+              Členovia kanála
+            </div>
+            <div class="text-caption text-grey-6">
+              Disponibilné aj cez príkaz <code>/list</code>.
+            </div>
+          </div>
+
+          <q-list dense>
+            <q-item
+              v-for="member in selectedChannel.members"
+              :key="member.id"
+            >
+              <q-item-section avatar>
+                <q-avatar size="28px" color="secondary" text-color="white">
+                  {{ member.nickName.slice(0, 2).toUpperCase() }}
+                </q-avatar>
+              </q-item-section>
+              <q-item-section>
+                <q-item-label class="text-body2 text-weight-medium">
+                  {{ member.nickName }}
+                  <q-badge
+                    v-if="member.role !== 'member'"
+                    color="purple-6"
+                    text-color="white"
+                    :label="member.role === 'owner' ? 'Owner' : 'Admin'"
+                    class="q-ml-xs"
+                    dense
+                  />
+                </q-item-label>
+                <q-item-label caption>
+                  {{ member.firstName }} {{ member.lastName }} · {{ member.status }}
+                </q-item-label>
+              </q-item-section>
+              <q-item-section side>
+                <q-icon
+                  :name="member.status === 'online' ? 'circle' : member.status === 'dnd' ? 'do_not_disturb_on' : 'cloud_off'"
+                  :color="member.status === 'online' ? 'positive' : member.status === 'dnd' ? 'negative' : 'grey-6'"
+                  size="18px"
+                />
+              </q-item-section>
+            </q-item>
+          </q-list>
+
+          <div
+            v-if="selectedChannel.members.length === 0"
+            class="text-caption text-grey-6 q-pa-md"
+          >
+            Žiadni členovia.
+          </div>
+        </section>
+
+        <section class="card inspector-card q-mt-md">
+          <div class="section-header q-mb-sm">
+            <div class="text-subtitle2 text-weight-medium">Moderovanie</div>
+            <div class="text-caption text-grey-6">
+              Spravujte prístup cez príkazy /invite, /revoke, /kick.
+            </div>
+          </div>
+
+          <q-list dense separator>
+            <q-item>
+              <q-item-section>
+                <q-item-label>Aktívne pozvánky</q-item-label>
+                <q-item-label caption>
+                  {{ selectedChannel.pendingInvites.length ? selectedChannel.pendingInvites.join(', ') : 'Žiadne' }}
+                </q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-item>
+              <q-item-section>
+                <q-item-label>Trvalé bany</q-item-label>
+                <q-item-label caption>
+                  {{ selectedChannel.bannedMembers.length ? selectedChannel.bannedMembers.join(', ') : 'Žiadne' }}
+                </q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-item>
+              <q-item-section>
+                <q-item-label>Posledná aktivita</q-item-label>
+                <q-item-label caption>
+                  {{ selectedChannel.lastActiveDays }} dní dozadu
+                </q-item-label>
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </section>
+      </div>
+    </q-drawer>
 
     <q-dialog v-model="createChannelDialog.open" persistent>
       <q-card style="min-width: 420px">
@@ -746,6 +1172,8 @@ const invites = ref<ChannelState[]>([]);
 const selectedChannelId = ref<string | null>(null);
 const subscribedChannels = new Set<string>();
 const notifiedMessages = new Set<string>();
+const sidebarDrawer = ref(false);
+const inspectorDrawer = ref(false);
 
 const consoleInput = ref('');
 const consoleInputRef = ref<{ focus: () => void } | null>(null);
@@ -1683,6 +2111,7 @@ watch(
   () => selectedChannelId.value,
   async (newId) => {
     if (!newId) {
+      inspectorDrawer.value = false;
       return;
     }
 
@@ -1692,6 +2121,24 @@ watch(
         return;
       }
       await Promise.all([refreshMessages(channel), loadChannelMembers(channel), loadTypingForChannel(channel)]);
+    }
+  },
+);
+
+watch(
+  () => $q.screen.lt.md,
+  (isSmall) => {
+    if (!isSmall) {
+      sidebarDrawer.value = false;
+    }
+  },
+);
+
+watch(
+  () => $q.screen.lt.lg,
+  (isSmall) => {
+    if (!isSmall && inspectorDrawer.value) {
+      inspectorDrawer.value = false;
     }
   },
 );
@@ -1766,7 +2213,9 @@ onBeforeUnmount(() => {
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: 320px 1fr 320px;
+  grid-template-areas: "sidebar main inspector";
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(260px, 320px);
+  grid-auto-rows: minmax(0, 1fr);
   grid-gap: 16px;
   height: 100%;
   padding: 16px;
@@ -1780,10 +2229,12 @@ onBeforeUnmount(() => {
 }
 
 .sidebar {
+  grid-area: sidebar;
   gap: 16px;
 }
 
 .main {
+  grid-area: main;
   background: #ffffff;
   border-radius: 16px;
   padding: 24px;
@@ -1793,6 +2244,7 @@ onBeforeUnmount(() => {
 }
 
 .inspector {
+  grid-area: inspector;
   gap: 16px;
 }
 
@@ -1994,6 +2446,24 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
 }
 
+.sidebar-drawer {
+  background: #f5f6fa;
+}
+
+.inspector-drawer {
+  background: #f5f6fa;
+}
+
+.drawer-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  overflow-y: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
+
 .draft-stream {
   background: #f8fafc;
   border: 1px dashed #cbd5f5;
@@ -2022,25 +2492,27 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1400px) {
   .workspace-grid {
-    grid-template-columns: 300px 1fr;
+    grid-template-areas: "sidebar main";
+    grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
   }
 
-  .inspector {
+  .workspace-grid > .inspector {
     display: none;
   }
 }
 
 @media (max-width: 1100px) {
   .workspace-grid {
+    grid-template-areas:
+      "main"
+      "sidebar";
     grid-template-columns: 1fr;
+    grid-auto-rows: auto;
+    gap: 12px;
   }
 
-  .sidebar {
-    order: 2;
-  }
-
-  .main {
-    order: 1;
+  .messages-container {
+    max-height: none;
   }
 }
 </style>
