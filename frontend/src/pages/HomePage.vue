@@ -390,6 +390,7 @@
 
           <div
             v-else
+            ref="messagesWrapperRef"
             class="messages-scroll-wrapper"
           >
             <q-infinite-scroll
@@ -405,6 +406,14 @@
                   :key="message.id"
                   :class="messageClasses(message)"
                 >
+                  <div
+                    v-if="selectedChannel?.unreadMarkerId === message.id"
+                    class="unread-separator row items-center q-gutter-xs q-mb-xs"
+                  >
+                    <q-separator class="col" />
+                    <div class="text-caption text-grey-7">Nové</div>
+                    <q-separator class="col" />
+                  </div>
                   <div class="row items-baseline q-gutter-xs">
                     <span class="text-weight-medium">
                       {{ message.system ? 'Systém' : message.sender }}
@@ -1072,7 +1081,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useQuasar } from 'quasar';
 import type { ChannelDto, ChannelMemberDto, MessageDto, TypingStateDto, UserDto } from '@vpwa/shared';
 import { useRouter } from 'vue-router';
@@ -1110,6 +1119,8 @@ type ChannelState = ChannelDto & {
   archived: boolean;
   lastActiveDays: number;
   unread: number;
+  unreadMarkerId: string | null;
+  pendingUnreadMarker: number;
   typingMembers: string[];
   typingPreviews: TypingStateDto[];
   pendingInvites: string[];
@@ -1174,6 +1185,7 @@ const subscribedChannels = new Set<string>();
 const notifiedMessages = new Set<string>();
 const sidebarDrawer = ref(false);
 const inspectorDrawer = ref(false);
+const messagesWrapperRef = ref<HTMLElement | null>(null);
 
 const consoleInput = ref('');
 const consoleInputRef = ref<{ focus: () => void } | null>(null);
@@ -1374,6 +1386,35 @@ const mergeMessages = (channel: ChannelState, incoming: MessageDto[]) => {
   return newMessages;
 };
 
+const scrollToBottom = () => {
+  void nextTick(() => {
+    const wrapper = messagesWrapperRef.value;
+    if (!wrapper) {
+      return;
+    }
+    wrapper.scrollTop = wrapper.scrollHeight;
+  });
+};
+
+const scrollToUnreadOrBottom = (channel: ChannelState) => {
+  void nextTick(() => {
+    const wrapper = messagesWrapperRef.value;
+    if (!wrapper) {
+      return;
+    }
+
+    if (channel.unreadMarkerId) {
+      const markerEl = wrapper.querySelector<HTMLElement>(`[data-message-id="${channel.unreadMarkerId}"]`);
+      if (markerEl) {
+        wrapper.scrollTop = markerEl.offsetTop - 24;
+        return;
+      }
+    }
+
+    wrapper.scrollTop = wrapper.scrollHeight;
+  });
+};
+
 const shouldNotifyMessage = (channel: ChannelState, message: MessageDto) => {
   if (!notificationSettings.enabled) {
     return false;
@@ -1447,6 +1488,8 @@ const mapChannelDto = (dto: ChannelDto, existing?: ChannelState): ChannelState =
   archived: false,
   lastActiveDays: computeLastActiveDays(dto.lastActivityAt),
   unread: dto.unreadCount,
+  unreadMarkerId: existing?.unreadMarkerId ?? null,
+  pendingUnreadMarker: existing?.pendingUnreadMarker ?? 0,
   typingMembers: existing?.typingMembers ?? [],
   typingPreviews: existing?.typingPreviews ?? [],
   pendingInvites: existing?.pendingInvites ?? [],
@@ -1564,6 +1607,12 @@ const refreshMessages = async (channel: ChannelState) => {
     channel.nextCursor = nextCursor;
     channel.messagesLoaded = true;
     channel.unread = 0;
+    if (channel.pendingUnreadMarker > 0) {
+      const index = Math.max(0, channel.messages.length - channel.pendingUnreadMarker);
+      const markerMessage = channel.messages[index];
+      channel.unreadMarkerId = markerMessage ? markerMessage.id : null;
+      channel.pendingUnreadMarker = 0;
+    }
     if (newMessages.length) {
       channel.lastActiveDays = 0;
       notifyAboutMessages(channel, newMessages);
@@ -1625,6 +1674,13 @@ const selectChannel = async (channelId: string) => {
   }
 
   selectedChannelId.value = channelId;
+
+  if (channel.unread > 0) {
+    channel.pendingUnreadMarker = channel.unread;
+  } else {
+    channel.unreadMarkerId = null;
+    channel.pendingUnreadMarker = 0;
+  }
   channel.unread = 0;
   if (!channel.isMember || currentUser.status === 'offline') {
     return;
@@ -1632,6 +1688,7 @@ const selectChannel = async (channelId: string) => {
 
   void ensureSubscribed(channelId);
   await Promise.all([refreshMessages(channel), loadChannelMembers(channel), loadTypingForChannel(channel)]);
+  scrollToUnreadOrBottom(channel);
 };
 
 const acceptInvite = async (channel: ChannelState) => {
@@ -1745,6 +1802,7 @@ const sendMessage = async (content: string) => {
     const message = await sendChannelMessage(channel.id, currentUser.id, trimmed);
     mergeMessages(channel, [message]);
     channel.lastActiveDays = 0;
+    scrollToBottom();
   } catch (error) {
     $q.notify({ type: 'negative', message: 'Správu sa nepodarilo odoslať.' });
     console.error(error);
@@ -1793,6 +1851,16 @@ const handleCommand = async (input: string) => {
 
     if (result.members && selectedChannel.value) {
       selectedChannel.value.members = result.members;
+      const memberList = result.members
+        .map((member) => `@${member.nickName} (${member.status})`)
+        .join(', ');
+
+      $q.notify({
+        type: 'info',
+        message: `${result.members.length} členov v #${selectedChannel.value.name}`,
+        caption: memberList.length > 320 ? `${memberList.slice(0, 317)}…` : memberList,
+        timeout: 6000,
+      });
     }
   } catch (error) {
     $q.notify({ type: 'negative', message: 'Príkaz sa nepodarilo spracovať.' });
@@ -2053,6 +2121,8 @@ const handleIncomingMessage = (payload: { message: MessageDto }) => {
     channel.unread = (channel.unread ?? 0) + 1;
   } else {
     channel.unread = 0;
+    channel.unreadMarkerId = null;
+    channel.pendingUnreadMarker = 0;
   }
 
   notifyAboutMessages(channel, newMessages);
@@ -2417,6 +2487,10 @@ onBeforeUnmount(() => {
   background: rgba(59, 130, 246, 0.08);
   border-radius: 12px;
   padding: 8px 12px;
+}
+
+.unread-separator {
+  color: #475569;
 }
 
 .command-console {
