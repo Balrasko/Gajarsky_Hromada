@@ -804,7 +804,12 @@ class ChatService {
   }
 
   public async fetchMessages(userId: string, channelId: string, cursor?: string, limit = 30) {
-    await this.ensureMembership(channelId, userId)
+    const membership = await this.ensureMembership(channelId, userId)
+
+    // Mark as read when the user pulls messages so unread counters stay accurate.
+    membership.lastReadAt = DateTime.utc()
+    membership.unreadCount = 0
+    await membership.save()
 
     const query = Message.query()
       .where('channelId', channelId)
