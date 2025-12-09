@@ -15,7 +15,7 @@
           class="column q-gutter-md"
           @submit.prevent="onSubmit"
         >
-          <div class="row justify-between no-wrap">
+          <div class="row q-col-gutter-sm">
             <div class="col-12 col-sm-6">
               <q-input
                 v-model="form.firstName"
