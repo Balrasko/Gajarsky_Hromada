@@ -1,3 +1,3 @@
 https://github.com/Balrasko/Gajarsky_Hromada/tree/main
 
-Phase 1 - branch 1_phase_prototype
+Phase 2 - branch main
