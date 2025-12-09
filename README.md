@@ -31,7 +31,7 @@ Use this command to generate APP_KEY. You need to be in backend folder. Paste th
 node ace generate:key
 ```
 
-## Start DB server (Not required in Phase 1)
+## Start DB server
 
 ```
 docker run --name postgresql-container -e POSTGRES_PASSWORD=postgresadm -d -p 5432:5432 postgres
